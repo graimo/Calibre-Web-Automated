@@ -359,6 +359,9 @@ services:
       # Override the default port (8083) for the web server.
       # Accepts any valid port number.
       - CWA_PORT_OVERRIDE=8083
+      # Multi-library is opt-in. Never enable it without the persistent bind below.
+      - MULTI_LIBRARY_ENABLED=false
+      - CALIBRE_LIBRARIES_ROOT=/calibre-libraries
     volumes:
       # CW users migrating should stop their existing CW instance, make a copy of the config folder, and bind that here to carry over all of their user settings ect.
       - /path/to/config/folder:/config
@@ -366,6 +369,8 @@ services:
       - /path/to/the/folder/you/want/to/use/for/book/ingest:/cwa-book-ingest
       # If you don't have an existing library, CWA will automatically create one at the bind provided here
       - /path/to/your/calibre/library:/calibre-library
+      # Required before setting MULTI_LIBRARY_ENABLED=true. Stores managed personal libraries.
+      - /path/to/your/personal/calibre/libraries:/calibre-libraries
       # If you use calibre plugins, you can bind your plugins folder here to have CWA attempt to add them to its workflow (WIP)
       # If you are starting with a fresh install, you also need to copy customize.py.json to the Calibre config volume above, in /path/to/config/folder/.config/calibre/customize.py.json, see the note below for more info
       - /path/to/your/calibre/plugins/folder:/config/.config/calibre/plugins
@@ -389,6 +394,7 @@ Please make sure all 3 of the main volume bindings are separate directories, err
 - `/calibre-library` - This should be bound to your Calibre library folder where the `metadata.db` & book(s) files reside.
   - **New Users** - Use any empty folder (if you run into any issues, make sure the ownership of said folder isn't `root:root` in your main os)
   - **Existing/ CW Users** - If there are multiple libraries in the mounted directory, CWA will automatically find and mount the largest one - check the logs for more details on which `metadata.db` was utilised
+- `/calibre-libraries` - Persistent root for managed personal libraries. This separate bind is mandatory before setting `MULTI_LIBRARY_ENABLED=true`; its host directory must be writable by `PUID`/`PGID`. Never place it on the container's ephemeral filesystem.
 - `/config/.config/calibre/plugins` - This should be bound to a directory containing a copy of your existing Calibre plugins. Configuration will be retained. (There is currently no way to configure plugins via CWA.)
   - In order for plugins to be registered and work, you must also copy the `customize.py.json` file from the Calibre plugins' parent directory to the correct config folder above, e.g. `/path/to/config/folder/.config/calibre/customize.py.json`. See the section below if you don't know where to find this file.
 <!-- - `/books` _(Optional)_ Utilise if you have a separate collection of book files somewhere and want to be able to access within the container. For the majority of users, this is not required and mounting`/calibre-library' is sufficient -->

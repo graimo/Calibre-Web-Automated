@@ -1,5 +1,9 @@
 [build-system]
-requires = ["setuptools>=61.2"]
+requires = [
+    "setuptools==80.9.0",
+    "setuptools-scm==8.3.1",
+    "Babel==2.17.0",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,10 +11,10 @@ name = "calibre-web-automated"
 description = "Calibre-Web but Automated and with Many New Features! Fully automate and simplify your eBook set up!"
 authors = [{name = "CrocodileStick", email = "crocodilestick@users.noreply.github.com"}]
 maintainers = [{name = "CrocodileStick"}]
-license = {text = "GPLv3+"}
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -27,6 +31,7 @@ keywords = [
     "automated",
 ]
 requires-python = ">=3.10"
+dynamic = ["version"]
 dependencies = [
     "APScheduler>=3.6.3,<3.12.0",
     "Babel>=1.3,<3.0",
@@ -61,7 +66,6 @@ dependencies = [
     "qrcode>=8.1",
     "polib>=1.2.0",
 ]
-dynamic = ["version"]
 
 [project.urls]
 Homepage = "https://github.com/crocodilestick/Calibre-Web-Automated"
@@ -125,11 +129,27 @@ kobo = [
 ]
 
 [project.scripts]
-cps = "calibreweb:main"
+cps = "cps.main:main"
 
 [tool.setuptools]
 include-package-data = true
-license-files = ["LICENSE"]
+py-modules = ["cwa_db"]
 
-[tool.setuptools.dynamic]
-version = {attr = "calibreweb.cps.constants.STABLE_VERSION"}
+[tool.setuptools.packages.find]
+include = ["cps*", "scripts"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+cps = [
+    "layout.html",
+    "templates/*",
+    "static/**/*",
+    "translations/**/*",
+]
+scripts = ["cwa_schema.sql"]
+
+[tool.setuptools.cmdclass]
+build_py = "scripts.build_helpers.CompileTranslations"
+
+[tool.setuptools_scm]
+fallback_version = "4.0.6"

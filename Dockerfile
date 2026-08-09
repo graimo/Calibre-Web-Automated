@@ -295,6 +295,7 @@ EXPOSE 8083
 VOLUME /config
 VOLUME /cwa-book-ingest
 VOLUME /calibre-library
+VOLUME /calibre-libraries
 
 # Health check for container orchestration
 # Uses shell form to support environment variable substitution for CWA_PORT_OVERRIDE

@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+{% block body %}
+<style>
+  .library-control-header { margin: 1.5rem 0 2.5rem; max-width: 72rem; }
+  .library-control-header p { color: #b8c4d1; max-width: 62rem; }
+  .library-card { background: rgba(27, 39, 53, .72); border: 1px solid rgba(255, 255, 255, .11); border-left: 4px solid #65c7b4; border-radius: 4px; margin-bottom: 2rem; padding: 1.5rem; }
+  .library-card.shared { border-left-color: #e8b04a; }
+  .library-card h3 { margin: 0 0 .4rem; }
+  .library-meta { color: #9fb0c0; font-size: 1.2rem; margin-bottom: 1.25rem; }
+  .library-meta code { background: rgba(0, 0, 0, .2); color: #cbd7e3; }
+  .library-role-form { align-items: center; display: flex; flex-wrap: wrap; gap: .65rem; }
+  .library-role-form .form-control { min-width: 12rem; width: auto; }
+  .library-owner { color: #cbd7e3; margin: .5rem 0 0; }
+  .library-empty { color: #9fb0c0; font-style: italic; }
+  .library-status { border: 1px solid rgba(255, 255, 255, .18); border-radius: 999px; display: inline-block; padding: .15rem .75rem; text-transform: uppercase; }
+  .library-status.error { border-color: #e07171; color: #ffaaaa; }
+</style>
+<div class="container-fluid">
+  <div class="library-control-header">
+    <a class="btn btn-default pull-right" href="{{ url_for('admin.admin') }}">{{ _('Back to administration') }}</a>
+    <h2>{{ _('Library access') }}</h2>
+    <p>{{ _('Manage explicit access to shared libraries and choose each user’s default library. This control-plane setting does not switch the currently served legacy library until tenant-aware routes are enabled.') }}</p>
+  </div>
+
+  {% for library in libraries %}
+  <section class="library-card {{ library.kind }}" aria-labelledby="library-{{ library.id }}-title">
+    <h3 id="library-{{ library.id }}-title">{{ library.name }}</h3>
+    <div class="library-meta">
+      {% if library.kind == 'personal' %}{{ _('Personal library') }}{% else %}{{ _('Shared library') }}{% endif %}
+      &middot; <code>{{ library.slug }}</code>
+      &middot;
+      <span class="library-status {{ library.status }}">
+        {% if library.status == 'active' %}{{ _('Active') }}
+        {% elif library.status == 'provisioning' %}{{ _('Provisioning') }}
+        {% elif library.status == 'disabled' %}{{ _('Disabled') }}
+        {% else %}{{ _('Error') }}{% endif %}
+      </span>
+    </div>
+
+    {% if library.kind == 'personal' %}
+      <p class="library-owner">
+        <strong>{{ _('Owner') }}:</strong>
+        {{ library.owner.name if library.owner else _('Unassigned') }}
+        &middot; {{ _('Manager access is permanent') }}
+      </p>
+      <form class="library-role-form" method="POST" action="{{ url_for('admin.manage_personal_library', library_id=library.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if library.status == 'disabled' %}
+          <button class="btn btn-primary" type="submit" name="action" value="enable">{{ _('Enable and provision') }}</button>
+          <button class="btn btn-danger" type="submit" name="action" value="delete">{{ _('Permanently delete library files') }}</button>
+          <span class="library-meta">{{ _('Deletion is irreversible and removes every book in this personal library.') }}</span>
+        {% else %}
+          <button class="btn btn-default" type="submit" name="action" value="disable">{{ _('Disable') }}</button>
+          {% if library.status == 'error' %}
+            <button class="btn btn-primary" type="submit" name="action" value="enable">{{ _('Retry provisioning') }}</button>
+          {% endif %}
+        {% endif %}
+      </form>
+    {% else %}
+      <div style="overflow-x: auto;">
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>{{ _('User') }}</th>
+              <th>{{ _('Access') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for user in users %}
+            {% set membership = memberships.get((library.id, user.id)) %}
+            <tr>
+              <td>{{ user.name }}</td>
+              <td>
+                <form class="library-role-form" method="POST" action="{{ url_for('admin.update_library_membership', library_id=library.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="user_id" value="{{ user.id }}">
+                  <label class="sr-only" for="role-{{ library.id }}-{{ user.id }}">{{ _('Role') }}</label>
+                  <select class="form-control" id="role-{{ library.id }}-{{ user.id }}" name="role">
+                    {% for role in roles %}
+                    <option value="{{ role }}"{% if membership and membership.role == role %} selected{% endif %}>
+                      {% if role == 'viewer' %}{{ _('Viewer') }}{% elif role == 'editor' %}{{ _('Editor') }}{% else %}{{ _('Manager') }}{% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <label class="checkbox-inline">
+                    <input type="checkbox" name="is_default"{% if membership and membership.is_default %} checked{% endif %}>
+                    {{ _('Default') }}
+                  </label>
+                  <button class="btn btn-primary" type="submit" name="action" value="save">
+                    {% if membership %}{{ _('Update') }}{% else %}{{ _('Grant access') }}{% endif %}
+                  </button>
+                  {% if membership %}
+                  <button class="btn btn-default" type="submit" name="action" value="remove">{{ _('Remove') }}</button>
+                  {% endif %}
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="2" class="library-empty">{{ _('No eligible users') }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </section>
+  {% else %}
+    <p class="library-empty">{{ _('No libraries are registered. Restart CWA after configuring the legacy Calibre library.') }}</p>
+  {% endfor %}
+</div>
+{% endblock %}

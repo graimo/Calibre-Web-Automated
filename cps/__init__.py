@@ -128,6 +128,11 @@ def create_app():
     config_sql.load_configuration(ub.session, encrypt_key)
     config.init_config(ub.session, encrypt_key, cli_param)
 
+    # Phase 1 only: register/provision the multi-library control plane. The
+    # legacy CalibreDB singleton remains the runtime data source until Phase 2.
+    from . import library_control
+    library_control.init_app(app, ub.session, config)
+
     # Intelligent Security Configuration
     # Force SESSION_COOKIE_SECURE if OAuth is enabled OR if "Use via HTTPS" is checked
     # This ensures OAuth works (requires Secure cookies) while allowing HTTP for standard login if desired

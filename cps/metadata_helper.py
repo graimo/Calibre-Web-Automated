@@ -7,7 +7,7 @@
 
 import json
 
-from cps import logger, db
+from cps import constants, logger, db, helper
 from cps.search_metadata import cl as metadata_providers
 import sys
 sys.path.insert(1, '/app/calibre-web-automated/scripts/')
@@ -68,8 +68,11 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
         # Try each provider in order
         metadata_found = False
         for provider_id in provider_hierarchy:
-            # Check if explicitly disabled (default is enabled if not specified)
-            is_enabled = enabled_map.get(provider_id, True)
+            # Respect each provider's centralized safe default.
+            is_enabled = enabled_map.get(
+                provider_id,
+                constants.metadata_provider_enabled_by_default(provider_id),
+            )
             if not is_enabled:
                 log.debug(f"Provider {provider_id} is globally disabled")
                 continue
@@ -124,6 +127,7 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
     Returns:
         bool: True if metadata was successfully applied
     """
+    cover_backup = None
     try:
         # Get CWA settings to check smart application preference and field selections
         cwa_db = CWA_DB()
@@ -131,6 +135,7 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
         use_smart_application = cwa_settings.get('auto_metadata_smart_application', False)
         
         updated = False
+        cover_updated = False
         
         # Update title - only if enabled in settings
         if (cwa_settings.get('auto_metadata_update_title', True) and 
@@ -286,22 +291,64 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
                     updated = True
         
         # Handle cover image - only if enabled in settings
-        if (cwa_settings.get('auto_metadata_update_cover', True) and 
-            hasattr(metadata, 'cover') and metadata.cover):
-            # TODO: Implement cover resolution checking for smart mode
-            # For now, just apply the cover in normal mode
-            if not use_smart_application:
-                # Apply cover (implementation depends on how covers are handled in Calibre-Web)
-                pass
-        
+        if (
+            cwa_settings.get('auto_metadata_update_cover', True)
+            and hasattr(metadata, 'cover')
+            and metadata.cover
+        ):
+            # Smart mode preserves an existing cover until resolution comparison is
+            # available; direct mode always applies the provider cover.
+            should_apply_cover = not use_smart_application or not bool(book.has_cover)
+            if should_apply_cover:
+                cover_backup = helper.create_cover_backup(book.path)
+                cover_saved, cover_error = helper.save_cover_from_url(
+                    metadata.cover, book.path
+                )
+                if cover_saved:
+                    book.has_cover = 1
+                    cover_updated = True
+                    updated = True
+                else:
+                    helper.discard_cover_backup(cover_backup)
+                    cover_backup = None
+                    log.warning(
+                        "Could not apply metadata cover for book %s: %s",
+                        book.id,
+                        cover_error,
+                    )
+
         if updated:
             calibre_db_instance.session.commit()
-            
+
+        helper.discard_cover_backup(cover_backup)
+        cover_backup = None
+        if cover_updated:
+            try:
+                helper.replace_cover_thumbnail_cache(book.id, book_path=book.path)
+            except Exception as error:
+                log.warning(
+                    "Metadata committed but thumbnail refresh failed for book %s: %s",
+                    book.id,
+                    error,
+                )
+
         return updated
-        
+
     except Exception as e:
-        log.error(f"Error applying metadata to book {getattr(book, 'id', 'unknown')}: {e}")
         calibre_db_instance.session.rollback()
+        if cover_backup is not None:
+            try:
+                helper.restore_cover_backup(cover_backup)
+                cover_backup = None
+            except Exception as restore_error:
+                log.error(
+                    "Could not restore cover for book %s after metadata rollback: %s; "
+                    "backup retained at %s",
+                    getattr(book, 'id', 'unknown'),
+                    restore_error,
+                    cover_backup.get("backup_path", "unknown"),
+                )
+        log.error(f"Error applying metadata to book {getattr(book, 'id', 'unknown')}: {e}")
         return False
 
 

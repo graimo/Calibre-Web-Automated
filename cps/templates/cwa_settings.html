@@ -125,14 +125,238 @@
       flex-basis: calc(50% - 6px);
   }
 
+
+  /* CWA settings control room ------------------------------------------------ */
+  #cwa-settings-page {
+    --cwa-panel: rgba(18, 28, 38, .88);
+    --cwa-panel-soft: rgba(12, 21, 29, .7);
+    --cwa-line: rgba(255, 255, 255, .11);
+    --cwa-accent: var(--color-secondary, #f8be03);
+    --cwa-accent-soft: rgba(248, 190, 3, .12);
+    --cwa-text: var(--color-text, #f2f5f7);
+    --cwa-muted: #aeb9c3;
+    --cwa-success: #67d6a3;
+    --cwa-radius: 14px;
+    width: min(100%, 1480px);
+    margin: 0 auto;
+    padding: 2rem clamp(1.2rem, 2.8vw, 3.4rem) 7rem;
+    color: var(--cwa-text);
+  }
+  #cwa-settings-page *, #cwa-settings-page *::before, #cwa-settings-page *::after { box-sizing: border-box; }
+  .cwa-command-header {
+    position: relative; isolation: isolate; overflow: hidden;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3rem; align-items: end;
+    min-height: 220px; padding: clamp(2.4rem, 5vw, 5.5rem);
+    border: 1px solid var(--cwa-line); border-radius: 22px;
+    background: radial-gradient(circle at 82% 12%, rgba(248,190,3,.17), transparent 28%),
+                linear-gradient(135deg, rgba(31,47,61,.96), rgba(12,21,29,.92));
+    box-shadow: 0 24px 60px rgba(0,0,0,.22);
+  }
+  .cwa-command-header::before {
+    content: ""; position: absolute; z-index: -1; inset: 0; opacity: .25;
+    background-image: linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px);
+    background-size: 36px 36px; mask-image: linear-gradient(90deg, black, transparent 82%);
+  }
+  .cwa-command-header::after {
+    content: "CWA / 01"; position: absolute; top: 2rem; right: 2.4rem; color: rgba(255,255,255,.2);
+    font: 700 1.1rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .16em;
+  }
+  .cwa-command-kicker {
+    display: inline-flex; align-items: center; gap: .8rem; margin-bottom: 1.4rem;
+    color: var(--cwa-accent); font: 700 1.1rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .14em; text-transform: uppercase;
+  }
+  .cwa-command-kicker::before { content: ""; width: 2.8rem; height: 2px; background: currentColor; }
+  #cwa-settings-title {
+    max-width: 820px; margin: 0 !important; color: #fff;
+    font-family: "Avenir Next Condensed", "DIN Condensed", sans-serif;
+    font-size: clamp(3.4rem, 6vw, 6.8rem) !important; font-weight: 700 !important;
+    line-height: .92; letter-spacing: -.035em;
+  }
+  .cwa-command-summary { max-width: 720px; margin: 1.8rem 0 0; color: var(--cwa-muted); font-size: 1.5rem; line-height: 1.65; }
+  .cwa-command-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 1.2rem; min-width: 190px; }
+  .cwa-save-state { display: inline-flex; align-items: center; gap: .8rem; color: var(--cwa-muted); font-size: 1.2rem; }
+  .cwa-save-state::before { content: ""; width: .8rem; height: .8rem; border-radius: 50%; background: var(--cwa-success); box-shadow: 0 0 0 5px rgba(103,214,163,.1); }
+  .cwa-save-state.is-dirty { color: #f8d56b; }
+  .cwa-save-state.is-dirty::before { background: var(--cwa-accent); box-shadow: 0 0 0 5px var(--cwa-accent-soft); }
+  #cwa-settings-page .cwa-primary-action {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 1.2rem 2rem;
+    border: 1px solid var(--cwa-accent); border-radius: 8px; background: var(--cwa-accent); color: #161a1e;
+    font-weight: 800; box-shadow: 0 12px 28px rgba(248,190,3,.16);
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+  }
+  #cwa-settings-page .cwa-primary-action:hover, #cwa-settings-page .cwa-primary-action:focus {
+    color: #161a1e; filter: brightness(1.06); transform: translateY(-2px); box-shadow: 0 16px 34px rgba(248,190,3,.24);
+  }
+  .cwa-settings-toolbar {
+    position: sticky; z-index: 30; top: 0; display: none; grid-template-columns: minmax(260px, 1fr) auto;
+    gap: 2rem; align-items: center; margin: 1.6rem 0 2rem; padding: 1.2rem;
+    border: 1px solid var(--cwa-line); border-radius: 12px; background: rgba(11,19,27,.91);
+    box-shadow: 0 10px 35px rgba(0,0,0,.2); backdrop-filter: blur(18px);
+  }
+  .is-enhanced .cwa-settings-toolbar { display: grid; }
+  .cwa-settings-search { position: relative; display: flex; align-items: center; }
+  .cwa-settings-search::before { content: "⌕"; position: absolute; left: 1.3rem; color: var(--cwa-accent); font-size: 2.1rem; pointer-events: none; }
+  #settings-search {
+    width: 100% !important; height: 44px; margin: 0 !important; padding: .9rem 8rem .9rem 4.2rem !important;
+    border: 1px solid transparent !important; border-radius: 8px !important;
+    background: rgba(255,255,255,.065) !important; color: #fff !important; outline: none;
+  }
+  #settings-search:focus { border-color: var(--cwa-accent) !important; box-shadow: 0 0 0 3px var(--cwa-accent-soft); }
+  #settings-search::placeholder { color: #8f9ba5; }
+  .cwa-search-shortcut { position: absolute; right: 1rem; padding: .25rem .65rem; border: 1px solid var(--cwa-line); border-radius: 5px; color: #95a1ab; font: 600 1rem/1.4 ui-monospace, monospace; pointer-events: none; }
+  .cwa-toolbar-meta { display: flex; align-items: center; gap: 1rem; color: var(--cwa-muted); white-space: nowrap; font-size: 1.2rem; }
+  .cwa-toolbar-meta strong { color: #fff; }
+  .cwa-settings-workspace { display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: clamp(2rem, 3vw, 4rem); align-items: start; }
+  .cwa-settings-rail { position: sticky; top: 86px; overflow-y: auto; max-height: calc(100vh - 110px); padding: 1.4rem; border: 1px solid var(--cwa-line); border-radius: var(--cwa-radius); background: var(--cwa-panel-soft); backdrop-filter: blur(16px); }
+  .cwa-rail-label { margin: .6rem .8rem 1rem; color: #788691; font: 700 1rem/1.2 ui-monospace, monospace; letter-spacing: .13em; text-transform: uppercase; }
+  .cwa-settings-nav { display: grid; gap: .35rem; margin: 0 0 1.5rem; padding: 0; list-style: none; }
+  .cwa-settings-nav:last-child { margin-bottom: 0; }
+  .cwa-settings-nav a { display: flex; align-items: center; gap: 1rem; min-height: 40px; padding: .8rem 1rem; border-radius: 7px; color: #b9c3cb; font-size: 1.25rem; text-decoration: none; transition: color .16s, background .16s, transform .16s; }
+  .cwa-settings-nav a::before { content: attr(data-index); min-width: 2rem; color: #6f7d88; font: 700 1rem/1 ui-monospace, monospace; }
+  .cwa-settings-nav a:hover, .cwa-settings-nav a:focus, .cwa-settings-nav a.is-active { background: var(--cwa-accent-soft); color: #fff; transform: translateX(3px); }
+  .cwa-settings-nav a.is-active::before { color: var(--cwa-accent); }
+  .cwa-settings-content { min-width: 0; counter-reset: settings-section; }
+  #cwa-settings-page .settings-container {
+    position: relative; scroll-margin-top: 90px; counter-increment: settings-section;
+    margin: 0 0 2rem !important; padding: clamp(2rem, 4vw, 4rem) !important;
+    border: 1px solid var(--cwa-line) !important; border-radius: var(--cwa-radius) !important;
+    background: linear-gradient(145deg, rgba(255,255,255,.025), transparent 38%), var(--cwa-panel) !important;
+    box-shadow: 0 16px 45px rgba(0,0,0,.13); transition: border-color .2s, box-shadow .2s;
+  }
+  #cwa-settings-page .settings-container::before { content: counter(settings-section, decimal-leading-zero); position: absolute; top: 2.4rem; right: 2.8rem; color: rgba(255,255,255,.13); font: 800 2.5rem/1 ui-monospace, monospace; }
+  #cwa-settings-page .settings-container::after { content: ""; position: absolute; top: -1px; left: 2.8rem; width: 56px; height: 2px; background: var(--cwa-accent); box-shadow: 0 0 22px rgba(248,190,3,.34); }
+  #cwa-settings-page .settings-container:hover { border-color: rgba(255,255,255,.18) !important; box-shadow: 0 20px 54px rgba(0,0,0,.2); }
+  #cwa-settings-page .settings-section-header { max-width: calc(100% - 5rem); margin: 0 0 1.1rem !important; padding: 0 !important; color: #fff !important; font-size: clamp(1.7rem, 2.3vw, 2.2rem); font-weight: 700; line-height: 1.3; }
+  #cwa-settings-page .settings-description, #cwa-settings-page .settings-explanation,
+  #cwa-settings-page .cwa-settings-explanation, #cwa-settings-page .cwa-settings-tooltip { max-width: 860px; color: var(--cwa-muted) !important; line-height: 1.7; }
+  #cwa-settings-page .cwa-settings-tooltip { margin: .45rem 0 1.7rem 3rem !important; padding-left: 1.4rem; border-left: 1px solid rgba(255,255,255,.1); }
+  #cwa-settings-page .form-group { margin: 2rem 0 0; }
+  #settings-processing > .form-group, #settings-hardcover .form-group, #settings-duplicate-resolution > .form-group { padding: 2rem !important; border: 1px solid rgba(255,255,255,.075); border-radius: 10px; background: rgba(6,13,19,.27) !important; }
+  #cwa-settings-page input[type="checkbox"] { width: 18px; height: 18px; margin: 0 .6rem .2rem 0; vertical-align: middle; accent-color: var(--cwa-accent) !important; }
+  #cwa-settings-page input[type="checkbox"] + label { color: #edf1f4; font-weight: 600; line-height: 1.5; cursor: pointer; }
+  #cwa-settings-page input[type="checkbox"]:disabled + label, #cwa-settings-page input:disabled, #cwa-settings-page select:disabled { opacity: .55; cursor: not-allowed; }
+  #cwa-settings-page input:not([type="checkbox"]):not([type="hidden"]):not([type="submit"]):not([type="search"]),
+  #cwa-settings-page select, #cwa-settings-page textarea { min-height: 42px; max-width: 100%; border: 1px solid rgba(255,255,255,.12) !important; border-radius: 7px !important; background: rgba(5,12,18,.55) !important; color: #f6f8f9 !important; outline: none; transition: border-color .16s, box-shadow .16s; }
+  #cwa-settings-page input:not([type="checkbox"]):not([type="hidden"]):not([type="submit"]):focus,
+  #cwa-settings-page select:focus, #cwa-settings-page textarea:focus { border-color: var(--cwa-accent) !important; box-shadow: 0 0 0 3px var(--cwa-accent-soft); }
+  #cwa-settings-page select option, #cwa-settings-page select optgroup { background: #17222c; color: #fff; }
+  #cwa-settings-page .cwa-settings-tip { margin-top: 1.5rem; padding: 1.2rem 1.4rem; border: 1px solid rgba(248,190,3,.17); border-left: 3px solid var(--cwa-accent); border-radius: 0 8px 8px 0; background: rgba(248,190,3,.055); color: #c8d0d6; }
+  #cwa-settings-page .settings-divider { margin: 2.4rem 0; border-color: var(--cwa-line); }
+  #metadata-field-selection, #metadata_provider_list_outer, #metadata_provider_enabled_list, #format_priority_container { border-color: rgba(255,255,255,.1) !important; border-radius: 10px !important; background: rgba(5,12,18,.34) !important; }
+  #metadata-field-selection > div[style*="grid-template-columns"] { margin-left: 0 !important; padding: 1.5rem 0 !important; }
+  .metadata-provider-item, .provider_enable_item, .format-priority-item > div { border-color: rgba(255,255,255,.1) !important; background: rgba(34,49,62,.82) !important; }
+  .metadata-provider-item:hover { background: rgba(45,62,76,.96) !important; }
+  #cwa-settings-page table { overflow: hidden; border: 1px solid var(--cwa-line); border-collapse: separate; border-spacing: 0; border-radius: 8px; }
+  #cwa-settings-page table td { padding: 1rem 1.2rem; border-bottom: 1px solid var(--cwa-line); }
+  #cwa-settings-page table tr:last-child td { border-bottom: 0; }
+  .cwa-no-results { display: none; padding: 5rem 2rem; border: 1px dashed rgba(248,190,3,.42); border-radius: var(--cwa-radius); background: var(--cwa-accent-soft); text-align: center; }
+  .cwa-no-results.is-visible { display: block; }
+  .cwa-no-results strong { display: block; margin-bottom: .7rem; color: #fff; font-size: 1.8rem; }
+  .cwa-settings-actions { position: sticky; z-index: 20; bottom: 1.2rem; display: flex; justify-content: space-between; gap: 1.2rem; margin-top: 2.5rem; padding: 1.2rem; border: 1px solid var(--cwa-line); border-radius: 11px; background: rgba(12,21,29,.92); box-shadow: 0 16px 40px rgba(0,0,0,.32); backdrop-filter: blur(18px); }
+  #cwa-settings-page .cwa-settings-actions input[type="submit"] { min-height: 44px; padding: .9rem 1.5rem; border-radius: 7px; }
+  #cwa-settings-page .cwa-settings-actions input[value="Submit"] { order: 2; border-color: var(--cwa-accent); background: var(--cwa-accent); color: #15191d; font-weight: 800; }
+  #cwa-settings-page .cwa-settings-actions input[value="Apply Default Settings"] { order: 1; border-color: rgba(239,119,111,.4); background: rgba(239,119,111,.08); color: #ffc0bb; }
+  #cwa-settings-page [hidden] { display: none !important; }
+  #cwa-settings-page :focus-visible { outline: 2px solid var(--cwa-accent); outline-offset: 3px; }
+  @media (max-width: 980px) {
+    .cwa-command-header { grid-template-columns: 1fr; align-items: start; }
+    .cwa-command-actions { align-items: flex-start; }
+    .cwa-settings-workspace { grid-template-columns: 1fr; }
+    .cwa-settings-rail { position: relative; top: auto; overflow-x: auto; overflow-y: hidden; max-height: none; display: flex; gap: 1.2rem; padding: 1rem; }
+    .cwa-rail-group { min-width: max-content; }
+    .cwa-rail-label { margin-left: .5rem; }
+    .cwa-settings-nav { display: flex; margin: 0; }
+    .cwa-settings-nav a:hover, .cwa-settings-nav a:focus, .cwa-settings-nav a.is-active { transform: translateY(-2px); }
+  }
+  @media (max-width: 640px) {
+    #cwa-settings-page { padding: 1rem .8rem 5rem; }
+    .cwa-command-header { min-height: 0; padding: 2.4rem 2rem; border-radius: 14px; }
+    .cwa-command-header::after { display: none; }
+    #cwa-settings-title { font-size: clamp(3.2rem, 14vw, 4.8rem) !important; }
+    .cwa-command-summary { font-size: 1.35rem; }
+    .cwa-settings-toolbar { grid-template-columns: 1fr; gap: .8rem; }
+    #cwa-settings-page .settings-container { padding: 2.2rem 1.7rem !important; }
+    #cwa-settings-page .settings-container::before { top: 1.7rem; right: 1.7rem; font-size: 1.8rem; }
+    #cwa-settings-page .settings-container::after { left: 1.7rem; }
+    #cwa-settings-page .settings-section-header { max-width: calc(100% - 3.5rem); }
+    #cwa-settings-page .cwa-settings-tooltip { margin-left: 0 !important; }
+    #cwa-settings-page .form-group[style*="display: flex"] { display: block !important; }
+    #cwa-settings-page .form-group[style*="display: flex"] > :last-child { margin-top: .8rem; margin-left: 0 !important; }
+    .provider_enable_item { flex-basis: 100%; }
+    .cwa-settings-actions { bottom: .6rem; flex-direction: column; }
+    #cwa-settings-page .cwa-settings-actions input[type="submit"] { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #cwa-settings-page *, #cwa-settings-page *::before, #cwa-settings-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  }
+
 </style>
 {% endblock %}
 
 {% block body %}
-<div class="discover">
-  <h2>{{title}}</h2>
-  <form action="{{ url_for('cwa_settings.set_cwa_settings')}}" method="post">
-    <div class="settings-container" style="margin-top: 3rem;">
+<div class="discover" id="cwa-settings-page">
+  <form action="{{ url_for('cwa_settings.set_cwa_settings')}}" method="post" id="cwa-settings-form">
+    <header class="cwa-command-header" aria-labelledby="cwa-settings-title">
+      <div>
+        <span class="cwa-command-kicker">{{_('Operations console')}}</span>
+        <h2 id="cwa-settings-title">{{title}}</h2>
+        <p class="cwa-command-summary">{{_('Control ingestion, metadata, conversion, backups and library quality from one focused workspace. Every change remains local until you save it.')}}</p>
+      </div>
+      <div class="cwa-command-actions">
+        <span class="cwa-save-state" id="settings-save-state" role="status" aria-live="polite">{{_('Configuration loaded')}}</span>
+        <button type="submit" name="submit_button" value="Submit" class="btn cwa-primary-action">{{_('Save changes')}}</button>
+      </div>
+    </header>
+    <div class="cwa-settings-toolbar" role="search">
+      <label class="cwa-settings-search" for="settings-search">
+        <span class="sr-only">{{_('Search settings')}}</span>
+        <input type="search" id="settings-search" data-settings-search autocomplete="off" placeholder="{{_('Search services, formats, schedules…')}}" aria-controls="settings-content">
+        <span class="cwa-search-shortcut" aria-hidden="true">/</span>
+      </label>
+      <div class="cwa-toolbar-meta" role="status" aria-live="polite"><strong id="settings-result-count">16</strong><span>{{_('configuration groups')}}</span></div>
+    </div>
+    <div class="cwa-settings-workspace">
+      <aside class="cwa-settings-rail" aria-label="{{_('Settings sections')}}">
+        <div class="cwa-rail-group">
+          <p class="cwa-rail-label">{{_('Operations')}}</p>
+          <ul class="cwa-settings-nav">
+            <li><a href="#settings-services" data-index="01">{{_('Core services')}}</a></li>
+            <li><a href="#settings-processing" data-index="02">{{_('Processing')}}</a></li>
+            <li><a href="#settings-providers" data-index="03">{{_('Metadata')}}</a></li>
+            <li><a href="#settings-hardcover" data-index="04">{{_('Integrations')}}</a></li>
+            <li><a href="#settings-interface" data-index="05">{{_('Interface')}}</a></li>
+          </ul>
+        </div>
+        <div class="cwa-rail-group">
+          <p class="cwa-rail-label">{{_('Data flow')}}</p>
+          <ul class="cwa-settings-nav">
+            <li><a href="#settings-backups" data-index="06">{{_('Backups')}}</a></li>
+            <li><a href="#settings-conversion-target" data-index="07">{{_('Conversion target')}}</a></li>
+            <li><a href="#settings-conversion-ignored" data-index="08">{{_('Conversion exclusions')}}</a></li>
+            <li><a href="#settings-conversion-retained" data-index="09">{{_('Retained formats')}}</a></li>
+            <li><a href="#settings-ingest-automerge" data-index="10">{{_('Auto-ingest merge')}}</a></li>
+            <li><a href="#settings-ingest-ignored" data-index="11">{{_('Ingest exclusions')}}</a></li>
+          </ul>
+        </div>
+        <div class="cwa-rail-group">
+          <p class="cwa-rail-label">{{_('Library quality')}}</p>
+          <ul class="cwa-settings-nav">
+            <li><a href="#settings-duplicate-detection" data-index="12">{{_('Detection system')}}</a></li>
+            <li><a href="#settings-duplicate-scanning" data-index="13">{{_('Automatic scanning')}}</a></li>
+            <li><a href="#settings-duplicate-criteria" data-index="14">{{_('Match criteria')}}</a></li>
+            <li><a href="#settings-duplicate-priority" data-index="15">{{_('Format priority')}}</a></li>
+            <li><a href="#settings-duplicate-resolution" data-index="16">{{_('Resolution')}}</a></li>
+          </ul>
+        </div>
+      </aside>
+      <main class="cwa-settings-content" id="settings-content">
+        <div class="cwa-no-results" id="settings-no-results" role="status">
+          <strong>{{_('No matching settings')}}</strong>
+          <span>{{_('Try another term or clear the search to see every configuration group.')}}</span>
+        </div>
+    <div class="settings-container" style="margin-top: 3rem;" id="settings-services" data-settings-section>
       <h4 class="settings-section-header">{{_('Enable/Disable Calibre-Web Automated Services')}}</h4>
       
       {% if cwa_settings['auto_convert'] %}
@@ -422,7 +646,7 @@
         </div>
     </div>
 
-  <div class="settings-container">
+  <div class="settings-container" id="settings-processing" data-settings-section>
     <!-- Ingest Timeout Setting -->
     <div class="form-group">
       <h4 class="settings-section-header">{{_('Ingest Processing Timeout')}}</h4>
@@ -529,7 +753,7 @@
 
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-providers" data-settings-section>
     <!-- Global Provider Enable/Disable Setting -->
       <div class="form-group">
         <h4 class="settings-section-header">{{_('Enabled Metadata Providers')}}</h4>
@@ -546,7 +770,7 @@
     </div>
 
     <!-- Hardcover Auto-Fetch Settings -->
-    <div class="settings-container">
+    <div class="settings-container" id="settings-hardcover" data-settings-section>
       <h4 class="settings-section-header">🔖 {{_('Hardcover Auto-Fetch Settings')}}</h4>
       <p class="settings-description">
         {{_('Automatically fetch and assign Hardcover IDs to books in your library. Hardcover IDs enable reading progress sync and annotation sync with Hardcover.app when using compatible eReaders.')}}
@@ -734,7 +958,7 @@
       </div>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-interface" data-settings-section>
         <h4 class="settings-section-header">{{_('Web UI Settings')}}</h4>
 
       {% if cwa_settings['cwa_update_notifications'] %}
@@ -778,7 +1002,7 @@
       </p>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-backups" data-settings-section>
       <h4 class="settings-section-header">{{_('Automatic Backup Settings')}}</h4>
 
       {% if cwa_settings['auto_backup_imports'] %}
@@ -824,7 +1048,7 @@
       </p>
     </div>
     
-    <div class="settings-container">
+    <div class="settings-container" id="settings-conversion-target" data-settings-section>
       <h4 class="settings-section-header">{{_('CWA Auto-Conversion Target Format - EPUB by Default')}}</h4>
 
       <p class="cwa-settings-explanation settings-explanation">
@@ -847,7 +1071,7 @@
       </div>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-conversion-ignored" data-settings-section>
       <h4 class="settings-section-header">{{_('CWA Auto-Convert - Ignored Formats')}}</h4>
       <p class="cwa-settings-explanation settings-explanation">
         {{_("The formats selected here will be ignored by CWA's Auto-Conversion feature when it's active, meaning they will be imported as is.")}}
@@ -874,7 +1098,7 @@
       </div>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-conversion-retained" data-settings-section>
       <h4 class="settings-section-header">{{_('CWA Auto-Convert - Retained Formats')}}</h4>
       <p class="cwa-settings-explanation settings-explanation">
         {{_('The formats selected here will always be added to the library, even after they have been converted to the target format. However, if the format is in the "CWA Auto-Ingest - Ignored Formats" list, it will not be imported. Note that the target format is always retained.')}}
@@ -903,7 +1127,7 @@
       </div>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-ingest-automerge" data-settings-section>
       <h4 class="settings-section-header">{{_('CWA Auto-Ingest Automerge')}}</h4>
 
       <p class="cwa-settings-explanation settings-explanation">
@@ -939,7 +1163,7 @@
       </tbody></table>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-ingest-ignored" data-settings-section>
       <h4 class="settings-section-header">{{_('CWA Auto-Ingest - Ignored Formats')}}</h4>
       <p class="cwa-settings-explanation settings-explanation">
         {{_("The formats selected here will be ignored by CWA's Auto-Ingest feature, meaning files in these formats won't be added to the library by CWA during the ingest process")}}
@@ -966,7 +1190,7 @@
       </div>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-duplicate-detection" data-settings-section>
       <h4 class="settings-section-header">{{_('CWA Duplicate Detection System')}}</h4>
 
       <p class="cwa-settings-explanation settings-explanation">
@@ -1010,7 +1234,7 @@
       <input type="hidden" id="duplicate_detection_use_sql" name="duplicate_detection_use_sql" value="1">
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-duplicate-scanning" data-settings-section>
       <h4 class="settings-section-header">{{_('Automatic Duplicate Scanning')}}</h4>
 
       <p class="cwa-settings-explanation settings-explanation">
@@ -1072,7 +1296,7 @@
       {% endif %}
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-duplicate-criteria" data-settings-section>
       <h4 class="settings-section-header">{{_('CWA Duplicate Detection Criteria')}}</h4>
 
       <p class="cwa-settings-explanation settings-explanation">
@@ -1124,7 +1348,7 @@
       </div>
     </div>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-duplicate-priority" data-settings-section>
       <h4 class="settings-section-header">{{_('Duplicate Format Priority Ranking')}}</h4>
 
       <p class="cwa-settings-explanation settings-explanation">
@@ -1148,7 +1372,7 @@
 
     <br>
 
-    <div class="settings-container">
+    <div class="settings-container" id="settings-duplicate-resolution" data-settings-section>
       <h4 class="settings-section-header">{{_('Duplicate Notifications & Auto-Resolution')}}</h4>
 
       <p class="cwa-settings-explanation settings-explanation">
@@ -1210,18 +1434,93 @@
       </div>
     </div>
 
-    <br>
-
-    <br>
-    <div style="margin-top: -2rem; max-width: 900px; justify-self: center; margin-bottom: 1rem; display: flex; flex-direction: row; flex-wrap: wrap; width: -webkit-fill-available; justify-content: space-between; margin-left: 2rem; margin-right: 2rem;">
+    <div class="cwa-settings-actions" aria-label="{{_('Configuration actions')}}">
       <input type="submit" name="submit_button" value="Submit" class="btn btn-default">
       <input type="submit" name="submit_button" value="Apply Default Settings" class="btn btn-default">
     </div>
-    <br>
-
+      </main>
     </div>
   </form>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const settingsPage = document.getElementById('cwa-settings-page');
+  settingsPage.classList.add('is-enhanced');
+  const settingsForm = document.getElementById('cwa-settings-form');
+  const searchInput = document.getElementById('settings-search');
+  const resultCount = document.getElementById('settings-result-count');
+  const noResults = document.getElementById('settings-no-results');
+  const saveState = document.getElementById('settings-save-state');
+  const sectionCards = Array.from(settingsPage.querySelectorAll('[data-settings-section]'));
+  const navLinks = Array.from(settingsPage.querySelectorAll('.cwa-settings-nav a'));
+
+  function normalizeSearchValue(value) {
+    return (value || '').toLocaleLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  function getSectionSearchIndex(card) {
+    const controls = Array.from(card.querySelectorAll('[name], [id]')).map(function(control) {
+      return (control.name || '') + ' ' + (control.id || '');
+    }).join(' ').replace(/[_-]/g, ' ');
+    return normalizeSearchValue(card.textContent + ' ' + controls);
+  }
+  function filterSettings() {
+    const query = normalizeSearchValue(searchInput.value.trim());
+    let visibleCount = 0;
+    sectionCards.forEach(function(card) {
+      const isMatch = !query || getSectionSearchIndex(card).indexOf(query) !== -1;
+      card.hidden = !isMatch;
+      if (isMatch) visibleCount += 1;
+    });
+    resultCount.textContent = visibleCount;
+    noResults.classList.toggle('is-visible', visibleCount === 0);
+    navLinks.forEach(function(link) {
+      const target = document.querySelector(link.getAttribute('href'));
+      link.closest('li').hidden = !!query && target && target.hidden;
+    });
+  }
+  searchInput.addEventListener('input', filterSettings);
+  document.addEventListener('keydown', function(event) {
+    const target = event.target;
+    const isEditing = target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName);
+    if (event.key === '/' && !isEditing) {
+      event.preventDefault(); searchInput.focus();
+    } else if (event.key === 'Escape' && document.activeElement === searchInput) {
+      searchInput.value = ''; filterSettings(); searchInput.blur();
+    }
+  });
+  function markDirty(event) {
+    if (event.target === searchInput || !event.target.matches('input, select, textarea')) return;
+    saveState.classList.add('is-dirty');
+    saveState.textContent = {{_('Unsaved changes') | tojson}};
+  }
+  settingsForm.addEventListener('input', markDirty);
+  settingsForm.addEventListener('change', markDirty);
+  settingsForm.addEventListener('submit', function() {
+    saveState.classList.remove('is-dirty');
+    saveState.textContent = {{_('Saving configuration…') | tojson}};
+  });
+  navLinks.forEach(function(link) {
+    link.addEventListener('click', function() {
+      navLinks.forEach(function(item) { item.classList.remove('is-active'); });
+      link.classList.add('is-active');
+    });
+  });
+  if ('IntersectionObserver' in window) {
+    const sectionObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (!entry.isIntersecting) return;
+        const activeLink = settingsPage.querySelector('.cwa-settings-nav a[href="#' + entry.target.id + '"]');
+        if (!activeLink) return;
+        navLinks.forEach(function(link) { link.classList.remove('is-active'); });
+        activeLink.classList.add('is-active');
+      });
+    }, { rootMargin: '-15% 0px -72% 0px', threshold: 0 });
+    sectionCards.forEach(function(card) { sectionObserver.observe(card); });
+  }
+  filterSettings();
+});
+</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -1271,6 +1570,7 @@ document.addEventListener('DOMContentLoaded', function() {
       console.error('Error fetching providers:', error);
       // Fallback with static list
       const fallbackProviders = [
+        {id: 'calibre', name: 'Calibre', active: true},
         {id: 'google', name: 'Google Books', active: true},
         {id: 'dnb', name: 'DNB', active: true},
         {id: 'ibdb', name: 'IBDb', active: true},
@@ -1338,7 +1638,9 @@ document.addEventListener('DOMContentLoaded', function() {
       wrapper.classList.add('provider_enable_item');
 
       const id = `global-provider-${p.id}`;
-      const checked = (enabledMap.hasOwnProperty(p.id) ? !!enabledMap[p.id] : true);
+      const checked = enabledMap.hasOwnProperty(p.id)
+        ? !!enabledMap[p.id]
+        : (p.hasOwnProperty('globally_enabled') ? !!p.globally_enabled : p.id !== 'calibre');
       wrapper.innerHTML = `
         <input type="checkbox" id="${id}" data-provider-id="${p.id}" ${checked ? 'checked' : ''}>
         <label for="${id}" style="margin-left: 8px;">${p.name}</label>

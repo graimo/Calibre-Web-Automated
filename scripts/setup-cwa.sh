@@ -6,6 +6,7 @@ make_dirs () {
     install -d -o abc -g abc /app/calibre-web-automated/metadata_temp
     install -d -o abc -g abc /cwa-book-ingest
     install -d -o abc -g abc /calibre-library
+    install -d -m 0750 -o abc -g abc /calibre-libraries
 }
 
 # Change ownership & permissions as required

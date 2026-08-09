@@ -30,6 +30,7 @@ Adjust storage classes, hostnames, and paths to match your cluster.
 - `deployment.yaml`: Runs `crocodilestick/calibre-web-automated:latest` on port `8083` with a single replica and `Recreate` strategy. Mounts:
   - `/config` from PVC `calibre-web-automated-config`
   - `/calibre-library` from PVC `calibre-library-pvc`
+  - `/calibre-libraries` from PVC `calibre-libraries-pvc` for managed personal libraries
   - `/cwa-book-ingest` from a hostPath (edit this to your NAS or use a PVC)
   - Sets `PUID`, `PGID`, and `TZ`. Add any other CWA envs you need.
 - `service.yaml`: ClusterIP service exposing port `8083` with selector `app.service=calibre-web-automated`.
@@ -45,6 +46,7 @@ Adjust storage classes, hostnames, and paths to match your cluster.
 - Edit `deployment.yaml`:
   - Set `TZ` to your timezone and adjust `PUID`/`PGID` to match file ownership on your volumes.
   - Update the ingest `hostPath` (`/nas/path/to/import-ebooks`) to an existing path on cluster nodes (or convert to PVC — see below).
+  - Multi-library defaults to disabled. Set `MULTI_LIBRARY_ENABLED=true` only after the `calibre-libraries-pvc` is bound and writable; keep `CALIBRE_LIBRARIES_ROOT=/calibre-libraries`.
   - Optionally add more environment variables. 
   
 - Edit storage classes in `pvc-*` files to match your cluster.
@@ -94,7 +96,8 @@ kubectl -n media port-forward svc/calibre-web-automated 8083:8083
 ## Storage and Data
 
 - `/config` (PVC: `calibre-web-automated-config`) holds application configuration and state.
-- `/calibre-library` (PVC: `calibre-library-pvc`) holds the Calibre library data.
+- `/calibre-library` (PVC: `calibre-library-pvc`) holds the legacy Calibre library data.
+- `/calibre-libraries` (PVC: `calibre-libraries-pvc`) persistently holds managed personal libraries. It must be writable by the configured `PUID`/`PGID` before enabling multi-library.
 - `/cwa-book-ingest` is an ingest folder. Files dropped here are imported and then removed after processing. By default this is a `hostPath` you must edit; consider switching to a PVC if you prefer.
 
 Note: If you use the Calibre Web Automated Book Downloader, you can mount the same ingest volume into that downloader so finished downloads are written directly into `/cwa-book-ingest` for automatic import by CWA. Make sure the PVC is Reads Write Many (`RWX`) so it can be mounted by more than one deployment. See the project: [Calibre Web Automated Book Downloader](https://github.com/calibrain/calibre-web-automated-book-downloader).

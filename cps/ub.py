@@ -31,7 +31,7 @@ except ImportError as e:
         OAuthConsumerMixin = BaseException
         oauth_support = False
 from sqlalchemy import create_engine, exc, exists, event, text
-from sqlalchemy import Column, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Index, UniqueConstraint, CheckConstraint
 from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import func
@@ -288,6 +288,142 @@ class User(UserBase, Base):
     auto_send_enabled = Column(Boolean, default=False)
     # Allow entering additional email addresses on send-to-eReader
     allow_additional_ereader_emails = Column(Boolean, default=True)
+
+
+class Library(Base):
+    """Control-plane record for one physical Calibre library."""
+
+    __tablename__ = "library"
+
+    id = Column(Integer, primary_key=True)
+    public_id = Column(String(36), nullable=False, unique=True, default=lambda: str(uuid.uuid4()))
+    slug = Column(String(96), nullable=False, unique=True)
+    name = Column(String(128), nullable=False)
+    kind = Column(String(16), nullable=False)
+    owner_user_id = Column(Integer, ForeignKey("user.id", ondelete="RESTRICT"), nullable=True, index=True)
+    root_path = Column(String, nullable=False, unique=True)
+    calibre_uuid = Column(String(64), nullable=True, unique=True)
+    status = Column(String(16), nullable=False, default="provisioning")
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    owner = relationship("User", foreign_keys=[owner_user_id])
+    memberships = relationship(
+        "LibraryMembership",
+        back_populates="library",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('personal', 'shared')", name="ck_library_kind"),
+        CheckConstraint(
+            "kind != 'personal' OR owner_user_id IS NOT NULL",
+            name="ck_personal_library_owner",
+        ),
+        CheckConstraint(
+            "status IN ('provisioning', 'active', 'disabled', 'error')",
+            name="ck_library_status",
+        ),
+        Index(
+            "uq_library_personal_owner",
+            "owner_user_id",
+            unique=True,
+            sqlite_where=text("kind = 'personal'"),
+        ),
+    )
+
+
+class LibraryMembership(Base):
+    """A user's explicit role in a registered Calibre library."""
+
+    __tablename__ = "library_membership"
+
+    library_id = Column(
+        Integer,
+        ForeignKey("library.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    role = Column(String(16), nullable=False, default="viewer")
+    is_default = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    library = relationship("Library", back_populates="memberships")
+    user = relationship("User")
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('viewer', 'editor', 'manager')",
+            name="ck_library_membership_role",
+        ),
+        Index(
+            "uq_library_membership_default_user",
+            "user_id",
+            unique=True,
+            sqlite_where=text("is_default = 1"),
+        ),
+    )
+
+
+class BookShare(Base):
+    """Provenance for an independent book copy published between libraries."""
+
+    __tablename__ = "book_share"
+
+    id = Column(Integer, primary_key=True)
+    source_library_id = Column(
+        Integer,
+        ForeignKey("library.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_library_name = Column(
+        String(128),
+        nullable=False,
+        default="Unknown library",
+    )
+    source_book_id = Column(Integer, nullable=False)
+    target_library_id = Column(
+        Integer,
+        ForeignKey("library.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    target_book_id = Column(Integer, nullable=False)
+    shared_by_user_id = Column(
+        Integer,
+        ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    shared_by_name = Column(
+        String(64),
+        nullable=False,
+        default="Unknown user",
+    )
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    source_library = relationship("Library", foreign_keys=[source_library_id])
+    target_library = relationship("Library", foreign_keys=[target_library_id])
+    shared_by_user = relationship("User", foreign_keys=[shared_by_user_id])
+
+    __table_args__ = (
+        CheckConstraint(
+            "source_library_id != target_library_id",
+            name="ck_book_share_distinct_libraries",
+        ),
+        UniqueConstraint(
+            "source_library_id",
+            "source_book_id",
+            "target_library_id",
+            "target_book_id",
+            name="uq_book_share_provenance",
+        ),
+        Index("ix_book_share_source", "source_library_id", "source_book_id"),
+        Index("ix_book_share_target", "target_library_id", "target_book_id"),
+    )
 
 
 if oauth_support:
@@ -734,6 +870,20 @@ class HardcoverMatchQueue(Base):
 # Updates the last_modified timestamp in the KoboReadingState table if any of its children tables are modified.
 @event.listens_for(Session, 'before_flush')
 def receive_before_flush(session, flush_context, instances):
+    for change in session.new:
+        if isinstance(change, BookShare):
+            if not change.source_library_name and change.source_library_id is not None:
+                source_library = change.source_library or session.query(Library).filter_by(
+                    id=change.source_library_id
+                ).one_or_none()
+                if source_library is not None:
+                    change.source_library_name = source_library.name
+            if not change.shared_by_name and change.shared_by_user_id is not None:
+                sharer = change.shared_by_user or session.query(User).filter_by(
+                    id=change.shared_by_user_id
+                ).one_or_none()
+                if sharer is not None:
+                    change.shared_by_name = sharer.name
     for change in itertools.chain(session.new, session.dirty):
         if isinstance(change, (ReadBook, KoboStatistics, KoboBookmark)):
             if change.kobo_reading_state:
@@ -857,6 +1007,122 @@ def add_missing_tables(engine, _session):
         OpdsMagicShelfExposure.__table__.create(bind=engine, checkfirst=True)
     if not engine.dialect.has_table(engine.connect(), "hidden_magic_shelf_templates"):
         HiddenMagicShelfTemplate.__table__.create(bind=engine, checkfirst=True)
+
+
+def _migrate_book_share_provenance(engine):
+    """Rebuild legacy BookShare so user/source deletion preserves provenance."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    with engine.begin() as connection:
+        column_rows = connection.execute(text("PRAGMA table_info(book_share)")).fetchall()
+        if not column_rows:
+            return
+        columns = {row[1]: row for row in column_rows}
+        foreign_keys = connection.execute(
+            text("PRAGMA foreign_key_list(book_share)")
+        ).fetchall()
+        source_fk = next((row for row in foreign_keys if row[3] == "source_library_id"), None)
+        sharer_fk = next((row for row in foreign_keys if row[3] == "shared_by_user_id"), None)
+        needs_rebuild = (
+            "source_library_name" not in columns
+            or "shared_by_name" not in columns
+            or bool(columns["source_library_id"][3])
+            or bool(columns["shared_by_user_id"][3])
+            or source_fk is None
+            or str(source_fk[6]).upper() != "SET NULL"
+            or sharer_fk is None
+            or str(sharer_fk[6]).upper() != "SET NULL"
+        )
+        if not needs_rebuild:
+            return
+
+        source_name = (
+            "NULLIF(legacy.source_library_name, '')"
+            if "source_library_name" in columns
+            else "NULL"
+        )
+        sharer_name = (
+            "NULLIF(legacy.shared_by_name, '')"
+            if "shared_by_name" in columns
+            else "NULL"
+        )
+        connection.execute(text("DROP TABLE IF EXISTS book_share_new"))
+        connection.execute(text("""
+            CREATE TABLE book_share_new (
+                id INTEGER NOT NULL PRIMARY KEY,
+                source_library_id INTEGER,
+                source_library_name VARCHAR(128) NOT NULL,
+                source_book_id INTEGER NOT NULL,
+                target_library_id INTEGER NOT NULL,
+                target_book_id INTEGER NOT NULL,
+                shared_by_user_id INTEGER,
+                shared_by_name VARCHAR(64) NOT NULL,
+                created_at DATETIME NOT NULL,
+                CONSTRAINT ck_book_share_distinct_libraries
+                    CHECK (source_library_id != target_library_id),
+                CONSTRAINT uq_book_share_provenance UNIQUE (
+                    source_library_id, source_book_id,
+                    target_library_id, target_book_id
+                ),
+                FOREIGN KEY(source_library_id) REFERENCES library(id) ON DELETE SET NULL,
+                FOREIGN KEY(target_library_id) REFERENCES library(id) ON DELETE RESTRICT,
+                FOREIGN KEY(shared_by_user_id) REFERENCES user(id) ON DELETE SET NULL
+            )
+        """))
+        connection.execute(text("""
+            INSERT INTO book_share_new (
+                id, source_library_id, source_library_name, source_book_id,
+                target_library_id, target_book_id,
+                shared_by_user_id, shared_by_name, created_at
+            )
+            SELECT
+                legacy.id,
+                CASE
+                    WHEN source_library.id IS NULL THEN NULL
+                    ELSE legacy.source_library_id
+                END,
+                COALESCE({source_name}, source_library.name, 'Deleted library'),
+                legacy.source_book_id,
+                legacy.target_library_id,
+                legacy.target_book_id,
+                CASE
+                    WHEN sharer.id IS NULL THEN NULL
+                    ELSE legacy.shared_by_user_id
+                END,
+                COALESCE({sharer_name}, sharer.name, 'Deleted user'),
+                legacy.created_at
+            FROM book_share AS legacy
+            LEFT JOIN library AS source_library
+                ON source_library.id = legacy.source_library_id
+            JOIN library AS target_library
+                ON target_library.id = legacy.target_library_id
+            LEFT JOIN user AS sharer
+                ON sharer.id = legacy.shared_by_user_id
+        """.format(source_name=source_name, sharer_name=sharer_name)))
+        connection.execute(text("DROP TABLE book_share"))
+        connection.execute(text("ALTER TABLE book_share_new RENAME TO book_share"))
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_book_share_source "
+            "ON book_share (source_library_id, source_book_id)"
+        ))
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_book_share_target "
+            "ON book_share (target_library_id, target_book_id)"
+        ))
+
+
+def migrate_multi_library_control_plane(engine):
+    """Create the Phase 1 control-plane schema without altering legacy state."""
+    for table in (
+        Library.__table__,
+        LibraryMembership.__table__,
+        BookShare.__table__,
+    ):
+        table.create(bind=engine, checkfirst=True)
+        for index in table.indexes:
+            index.create(bind=engine, checkfirst=True)
+    _migrate_book_share_provenance(engine)
 
 
 # migrate all settings missing in registration table
@@ -1120,6 +1386,7 @@ def migrate_shelf_table(engine, _session):
 def migrate_Database(_session):
     engine = _session.bind
     add_missing_tables(engine, _session)
+    migrate_multi_library_control_plane(engine)
     migrate_registration_table(engine, _session)
     migrate_user_session_table(engine, _session)
     migrate_user_table(engine, _session)
@@ -1286,10 +1553,27 @@ def create_system_magic_shelves_for_user(user_id):
         return 0
 
 
+def _create_app_db_engine(database_path):
+    engine = create_engine(
+        'sqlite:///{0}'.format(database_path),
+        echo=False,
+        connect_args={'timeout': 30},
+    )
+
+    @event.listens_for(engine, 'connect')
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute('PRAGMA foreign_keys=ON')
+        finally:
+            cursor.close()
+
+    return engine
+
+
 def init_db_thread():
     global app_DB_path
-    engine = create_engine('sqlite:///{0}'.format(app_DB_path), echo=False,
-                           connect_args={'timeout': 30})
+    engine = _create_app_db_engine(app_DB_path)
 
     Session = scoped_session(sessionmaker())
     Session.configure(bind=engine)
@@ -1302,8 +1586,7 @@ def init_db(app_db_path):
     global app_DB_path
 
     app_DB_path = app_db_path
-    engine = create_engine('sqlite:///{0}'.format(app_db_path), echo=False,
-                           connect_args={'timeout': 30})
+    engine = _create_app_db_engine(app_db_path)
 
     Session = scoped_session(sessionmaker())
     Session.configure(bind=engine)
@@ -1373,8 +1656,7 @@ def password_change(user_credentials=None):
 
 
 def get_new_session_instance():
-    new_engine = create_engine('sqlite:///{0}'.format(app_DB_path), echo=False,
-                               connect_args={'timeout': 30})
+    new_engine = _create_app_db_engine(app_DB_path)
     new_session = scoped_session(sessionmaker())
     new_session.configure(bind=new_engine)
 

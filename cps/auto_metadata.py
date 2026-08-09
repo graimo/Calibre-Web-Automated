@@ -9,7 +9,7 @@ import json
 import concurrent.futures
 from typing import List, Optional, Dict, Any
 
-from cps import logger, ub
+from cps import constants, logger, ub
 from cps.search_metadata import cl
 from cps.string_helper import strip_whitespaces
 
@@ -105,8 +105,11 @@ def fetch_metadata_for_book(book_title: str, book_authors: str = "", user_id: Op
         
         # Try providers in order of preference
         for provider_id in provider_hierarchy:
-            # Check if explicitly disabled (default is enabled if not specified)
-            is_enabled = enabled_map.get(provider_id, True)
+            # Respect each provider's centralized safe default.
+            is_enabled = enabled_map.get(
+                provider_id,
+                constants.metadata_provider_enabled_by_default(provider_id),
+            )
             if not is_enabled:
                 log.debug(f"Provider {provider_id} is globally disabled")
                 continue

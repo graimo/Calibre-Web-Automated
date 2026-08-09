@@ -48,6 +48,21 @@ else:
 DEFAULT_SETTINGS_FILE = "app.db"
 DEFAULT_GDRIVE_FILE = "gdrive.db"
 
+# Multi-library rollout remains opt-in until the tenant-aware registry and routes
+# are available. Paths are generated from server UUIDs, never from user input.
+MULTI_LIBRARY_ENABLED = os.environ.get("MULTI_LIBRARY_ENABLED", "false").lower() in (
+    "1", "true", "yes", "on"
+)
+CALIBRE_LIBRARIES_ROOT = os.environ.get("CALIBRE_LIBRARIES_ROOT", "/calibre-libraries")
+
+# Subprocess-backed providers must be explicitly enabled by an administrator.
+METADATA_PROVIDER_DEFAULTS = {"calibre": False}
+
+
+def metadata_provider_enabled_by_default(provider_id):
+    return METADATA_PROVIDER_DEFAULTS.get(provider_id, True)
+
+
 ROLE_USER               = 0 << 0
 ROLE_ADMIN              = 1 << 0
 ROLE_DOWNLOAD           = 1 << 1

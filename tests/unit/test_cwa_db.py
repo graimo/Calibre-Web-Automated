@@ -351,6 +351,17 @@ class TestCWADBErrorHandling:
         except Exception as e:
             # This is expected
             assert "no such table" in str(e).lower()
+
+    def test_explicit_database_file_path_is_supported(self, tmp_path, monkeypatch):
+        database_path = tmp_path / "nested" / "custom-cwa.db"
+        monkeypatch.setenv("CWA_DB_PATH", str(database_path))
+
+        db = CWA_DB(verbose=False)
+        try:
+            assert db.database_path == str(database_path)
+            assert database_path.is_file()
+        finally:
+            db.con.close()
     
     def test_connection_can_be_closed_safely(self, temp_cwa_db):
         """Verify database connection can be closed without errors."""

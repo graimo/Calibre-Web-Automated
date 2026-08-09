@@ -5,7 +5,6 @@
 # See CONTRIBUTORS for full list of authors.
 
 import sqlite3
-import sys
 import os
 from sqlite3 import Error as sqlError
 import re
@@ -18,9 +17,17 @@ class CWA_DB:
     def __init__(self, verbose=False):
         self.verbose = verbose
 
-        self.db_file = "cwa.db"
-        self.db_path = "/config/"
-        self.con, self.cur = self.connect_to_db() # type: ignore
+        configured_path = os.environ.get("CWA_DB_PATH", "/config")
+        configured_path = os.path.abspath(os.path.expanduser(configured_path))
+        if configured_path.lower().endswith(".db"):
+            self.db_path = os.path.dirname(configured_path) or os.getcwd()
+            self.db_file = os.path.basename(configured_path)
+        else:
+            self.db_path = configured_path
+            self.db_file = "cwa.db"
+        os.makedirs(self.db_path, exist_ok=True)
+        self.database_path = os.path.join(self.db_path, self.db_file)
+        self.con, self.cur = self.connect_to_db()  # type: ignore
 
         # Support both Docker and CI environments for schema path
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -50,10 +57,13 @@ class CWA_DB:
         con = None
         cur = None
         try:
-            con = sqlite3.connect(self.db_path + self.db_file, timeout=30)
-        except sqlError as e:
-            print(f"[cwa-db]: The following error occurred while trying to connect to the CWA Enforcement DB: {e}")
-            sys.exit(0)
+            con = sqlite3.connect(self.database_path, timeout=30)
+        except sqlError as error:
+            raise RuntimeError(
+                "Could not connect to the CWA database at {}: {}".format(
+                    self.database_path, error
+                )
+            ) from error
         if con:
             cur = con.cursor()
             if self.verbose:

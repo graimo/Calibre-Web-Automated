@@ -595,6 +595,15 @@ def deleteDatabasePath(Pathname):
         session.rollback()
 
 
+def download_cover_to_file(cover_path, destination_path):
+    """Download a cover with authenticated Drive access and no ACL changes."""
+    drive_file = getFileFromEbooksFolder(cover_path, 'cover.jpg')
+    if not drive_file:
+        return False
+    drive_file.GetContentFile(destination_path)
+    return True
+
+
 # Gets cover file from gdrive
 # ToDo: Check is this right everyone get read permissions on cover files?
 def get_cover_via_gdrive(cover_path):

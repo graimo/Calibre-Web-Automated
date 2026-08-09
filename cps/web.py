@@ -169,6 +169,35 @@ def viewer_required(f):
 # ################################### data provider functions #########################################################
 
 
+
+
+@web.route("/shared-books")
+@user_login_required
+def shared_books():
+    if not constants.MULTI_LIBRARY_ENABLED or current_user.is_anonymous:
+        abort(404)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+
+    from .shared_books import get_shared_books_page
+
+    shared_page = get_shared_books_page(ub.session, current_user, page=page)
+    pagination = Pagination(
+        shared_page.page,
+        shared_page.per_page,
+        shared_page.total,
+    )
+    return render_title_template(
+        "shared_books.html",
+        title=_("Shared Books"),
+        page="shared-books",
+        entries=shared_page.items,
+        pagination=pagination,
+    )
+
+
 @web.route("/ajax/emailstat")
 @user_login_required
 def get_email_status_json():

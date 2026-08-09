@@ -5,6 +5,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
+import base64
+import binascii
 import glob
 import os
 import random
@@ -16,6 +18,7 @@ import regex
 import shutil
 import socket
 import platform
+import tempfile
 from datetime import datetime, timedelta, timezone
 import requests
 import unidecode
@@ -1057,7 +1060,46 @@ def _get_cover_download_limit():
     return max_mb * 1024 * 1024, max_mb
 
 
+def _save_cover_from_data_uri(url, book_path):
+    max_cover_bytes, max_cover_mb = _get_cover_download_limit()
+    try:
+        header, encoded = url.split(",", 1)
+        header_parts = header[5:].lower().split(";")
+        content_type = header_parts[0]
+        if content_type not in {
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "image/webp",
+            "image/bmp",
+        } or "base64" not in header_parts[1:]:
+            raise ValueError("unsupported cover data URI")
+
+        max_encoded_length = 4 * ((max_cover_bytes + 2) // 3)
+        if len(encoded) > max_encoded_length:
+            return False, _(
+                "Cover image exceeds maximum size of %(size)s MB", size=max_cover_mb
+            )
+
+        content = base64.b64decode(encoded, validate=True)
+        if len(content) > max_cover_bytes:
+            return False, _(
+                "Cover image exceeds maximum size of %(size)s MB", size=max_cover_mb
+            )
+
+        response = requests.Response()
+        response.status_code = 200
+        response.headers["content-type"] = content_type
+        response._content = content
+        return save_cover(response, book_path)
+    except (ValueError, binascii.Error):
+        log.error("Invalid cover image data URI")
+        return False, _("Invalid cover image data")
+
+
 def save_cover_from_url(url, book_path):
+    if url.lower().startswith("data:image/"):
+        return _save_cover_from_data_uri(url, book_path)
     max_cover_bytes, max_cover_mb = _get_cover_download_limit()
     img = None
     download_start = time.monotonic()
@@ -1108,31 +1150,99 @@ def save_cover_from_url(url, book_path):
 
 
 def save_cover_from_filestorage(filepath, saved_filename, img):
-    # check if file path exists, otherwise create it, copy file to calibre path and delete temp file
+    # Write beside the destination and atomically promote only a complete image.
     if not os.path.exists(filepath):
         try:
             os.makedirs(filepath)
         except OSError:
             log.error("Failed to create path for cover")
             return False, _("Failed to create path for cover")
+
+    destination = os.path.join(filepath, saved_filename)
+    file_descriptor, temporary_path = tempfile.mkstemp(
+        prefix=".cwa-cover-", suffix=".jpg", dir=filepath
+    )
+    os.close(file_descriptor)
     try:
-        # upload of jpg file without wand
         if isinstance(img, requests.Response):
-            with open(os.path.join(filepath, saved_filename), 'wb') as f:
-                f.write(img.content)
+            with open(temporary_path, 'wb') as temporary_file:
+                temporary_file.write(img.content)
+        elif hasattr(img, "metadata"):
+            img.save(filename=temporary_path)
+            img.close()
         else:
-            if hasattr(img, "metadata"):
-                # upload of jpg/png... via url
-                img.save(filename=os.path.join(filepath, saved_filename))
-                img.close()
-            else:
-                # upload of jpg/png... from hdd
-                img.save(os.path.join(filepath, saved_filename))
+            img.save(temporary_path)
+
+        existing_mode = os.stat(destination).st_mode & 0o777 if os.path.exists(destination) else 0o644
+        os.chmod(temporary_path, existing_mode)
+        os.replace(temporary_path, destination)
     except (IOError, OSError):
         log.error("Cover-file is not a valid image file, or could not be stored")
         return False, _("Cover-file is not a valid image file, or could not be stored")
+    finally:
+        if os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
     return True, None
 
+
+
+def create_cover_backup(book_path):
+    """Snapshot the current cover so a failed DB commit can be compensated."""
+    temp_dir = tempfile.mkdtemp(prefix="cwa-cover-backup-")
+    backup_path = os.path.join(temp_dir, "cover.jpg")
+    token = {
+        "book_path": book_path,
+        "backup_path": backup_path,
+        "temp_dir": temp_dir,
+        "had_cover": False,
+        "gdrive": bool(config.config_use_google_drive),
+    }
+    try:
+        if token["gdrive"]:
+            token["had_cover"] = gd.download_cover_to_file(book_path, backup_path)
+        else:
+            target = os.path.join(config.get_book_path(), book_path, "cover.jpg")
+            token["target_path"] = target
+            if os.path.isfile(target):
+                shutil.copy2(target, backup_path)
+                token["had_cover"] = True
+        return token
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+
+def discard_cover_backup(token):
+    if token:
+        shutil.rmtree(token.get("temp_dir", ""), ignore_errors=True)
+
+
+def restore_cover_backup(token):
+    """Restore the snapshot, retaining it if the restore operation fails."""
+    if not token:
+        return
+    if token["gdrive"]:
+        if token["had_cover"]:
+            gd.uploadFileToEbooksFolder(
+                os.path.join(token["book_path"], "cover.jpg").replace("\\", "/"),
+                token["backup_path"],
+            )
+        else:
+            uploaded = gd.getFileFromEbooksFolder(token["book_path"], "cover.jpg")
+            if uploaded:
+                gd.deleteDatabaseEntry(uploaded["id"])
+                uploaded.Trash()
+    else:
+        target = token["target_path"]
+        if token["had_cover"]:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            os.replace(token["backup_path"], target)
+        elif os.path.isfile(target):
+            os.remove(target)
+    discard_cover_backup(token)
 
 # saves book cover to gdrive or locally
 def save_cover(img, book_path):

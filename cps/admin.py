@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from datetime import time as datetime_time
 from functools import wraps
 from urllib.parse import urlparse
+from contextlib import nullcontext
 import shutil
 import subprocess
 import tempfile
@@ -535,9 +536,118 @@ def admin():
                                  cwa_version=cwa_version, kepubify_version=kepubify_version,
                                  calibre_version=calibre_version, feature_support=feature_support,
                                  schedule_time=schedule_time, schedule_duration=schedule_duration,
+                                 multi_library_enabled=constants.MULTI_LIBRARY_ENABLED,
                                  is_proxied=current_app.wsgi_app.is_proxied,
                                  title=_("Admin page"), page="admin")
 
+
+@admi.route("/admin/libraries", methods=["GET"])
+@user_login_required
+@admin_required
+def library_memberships():
+    if not constants.MULTI_LIBRARY_ENABLED:
+        abort(404)
+
+    libraries = ub.session.query(ub.Library).order_by(ub.Library.kind, ub.Library.name).all()
+    users = ub.session.query(ub.User).filter(
+        ub.User.role.op('&')(constants.ROLE_ANONYMOUS) != constants.ROLE_ANONYMOUS
+    ).order_by(func.lower(ub.User.name)).all()
+    memberships = {
+        (membership.library_id, membership.user_id): membership
+        for membership in ub.session.query(ub.LibraryMembership).all()
+    }
+    return render_title_template(
+        "library_memberships.html",
+        libraries=libraries,
+        users=users,
+        memberships=memberships,
+        roles=("viewer", "editor", "manager"),
+        title=_("Library access"),
+        page="library-memberships",
+    )
+
+
+@admi.route("/admin/libraries/<int:library_id>/members", methods=["POST"])
+@user_login_required
+@admin_required
+def update_library_membership(library_id):
+    if not constants.MULTI_LIBRARY_ENABLED:
+        abort(404)
+
+    library = ub.session.query(ub.Library).filter_by(id=library_id).one_or_none()
+    try:
+        user_id = int(request.form.get("user_id", ""))
+    except (TypeError, ValueError):
+        abort(400)
+    user = ub.session.query(ub.User).filter_by(id=user_id).one_or_none()
+    if library is None or user is None:
+        abort(404)
+
+    from . import library_control
+
+    try:
+        if request.form.get("action") == "remove":
+            library_control.remove_membership(ub.session, library, user)
+            flash(_("Library membership removed"), category="success")
+        else:
+            library_control.set_membership(
+                ub.session,
+                library,
+                user,
+                request.form.get("role", "viewer"),
+                request.form.get("is_default") == "on",
+            )
+            flash(_("Library membership updated"), category="success")
+    except library_control.LibraryPolicyError as error:
+        ub.session.rollback()
+        flash(_("Library membership was not changed: %(error)s", error=str(error)), category="error")
+    except (IntegrityError, OperationalError, InvalidRequestError) as error:
+        ub.session.rollback()
+        log.error_or_exception("Library membership update failed: %s", error)
+        flash(_("Settings database error while updating library access"), category="error")
+    return redirect(url_for("admin.library_memberships"))
+
+
+
+@admi.route("/admin/libraries/<int:library_id>/personal", methods=["POST"])
+@user_login_required
+@admin_required
+def manage_personal_library(library_id):
+    if not constants.MULTI_LIBRARY_ENABLED:
+        abort(404)
+
+    library = ub.session.query(ub.Library).filter_by(id=library_id, kind="personal").one_or_none()
+    if library is None:
+        abort(404)
+
+    from . import library_control
+
+    action = request.form.get("action")
+    try:
+        if action == "disable":
+            library_control.disable_personal_library(ub.session, library)
+            flash(_("Personal library disabled"), category="success")
+        elif action == "enable":
+            library_control.enable_personal_library(ub.session, library)
+            flash(_("Personal library provisioning queued"), category="success")
+        elif action == "delete":
+            owner_name = library.owner.name if library.owner else library.name
+            library_control.delete_personal_library(ub.session, library)
+            flash(_("Personal library for %(user)s deleted", user=owner_name), category="success")
+        else:
+            abort(400)
+    except library_control.LibraryPolicyError as error:
+        ub.session.rollback()
+        flash(_("Personal library was not changed: %(error)s", error=str(error)), category="error")
+    except (IntegrityError, OperationalError, InvalidRequestError, OSError) as error:
+        ub.session.rollback()
+        log.error_or_exception("Personal library lifecycle update failed: %s", error)
+        flash(_("Could not update the personal library"), category="error")
+    except Exception as error:
+        ub.session.rollback()
+        log.error_or_exception("Unexpected personal library lifecycle failure: %s", error)
+        flash(_("Could not update the personal library"), category="error")
+    return redirect(url_for("admin.library_memberships"))
 
 @admi.route("/admin/dbconfig", methods=["GET", "POST"])
 @user_login_required
@@ -2550,6 +2660,20 @@ def _handle_new_user(to_save, content, languages, translations, kobo_support):
         content.kobo_only_shelves_sync = to_save.get("kobo_only_shelves_sync", 0) == "on"
         ub.session.add(content)
         ub.session.commit()
+        if constants.MULTI_LIBRARY_ENABLED:
+            try:
+                from . import library_control
+                library_control.queue_personal_library_provisioning(content.id)
+            except Exception as error:
+                log.error_or_exception(
+                    "User %s was created but personal-library provisioning could not be queued: %s",
+                    content.id,
+                    error,
+                )
+                flash(
+                    _("User created; personal library provisioning will be retried"),
+                    category="warning",
+                )
         flash(_("User '%(user)s' created", user=content.name), category="success")
         log.debug("User {} created".format(content.name))
         return redirect(url_for('admin.admin'))
@@ -2563,36 +2687,156 @@ def _handle_new_user(to_save, content, languages, translations, kobo_support):
         flash(_("Oops! Database Error: %(error)s.", error=e.orig), category="error")
 
 
+def _delete_user_owned_rows(user_id):
+    """Delete every app.db row owned by a user in foreign-key-safe order."""
+    shelf_ids = [
+        shelf_id
+        for (shelf_id,) in ub.session.query(ub.Shelf.id).filter(
+            ub.Shelf.user_id == user_id
+        )
+    ]
+    magic_shelf_ids = [
+        shelf_id
+        for (shelf_id,) in ub.session.query(ub.MagicShelf.id).filter(
+            ub.MagicShelf.user_id == user_id
+        )
+    ]
+
+    ub.session.query(ub.LibraryMembership).filter_by(user_id=user_id).delete()
+    if hasattr(ub, "OAuth"):
+        ub.session.query(ub.OAuth).filter(ub.OAuth.user_id == user_id).delete(
+            synchronize_session=False
+        )
+
+    shelf_exposure_filter = ub.OpdsShelfExposure.user_id == user_id
+    if shelf_ids:
+        shelf_exposure_filter = or_(
+            shelf_exposure_filter,
+            ub.OpdsShelfExposure.shelf_id.in_(shelf_ids),
+        )
+        ub.session.query(ub.BookShelf).filter(
+            ub.BookShelf.shelf.in_(shelf_ids)
+        ).delete(synchronize_session=False)
+    ub.session.query(ub.OpdsShelfExposure).filter(shelf_exposure_filter).delete(
+        synchronize_session=False
+    )
+
+    magic_exposure_filter = ub.OpdsMagicShelfExposure.user_id == user_id
+    hidden_magic_filter = ub.HiddenMagicShelfTemplate.user_id == user_id
+    cache_filter = ub.MagicShelfCache.user_id == user_id
+    if magic_shelf_ids:
+        magic_exposure_filter = or_(
+            magic_exposure_filter,
+            ub.OpdsMagicShelfExposure.shelf_id.in_(magic_shelf_ids),
+        )
+        hidden_magic_filter = or_(
+            hidden_magic_filter,
+            ub.HiddenMagicShelfTemplate.shelf_id.in_(magic_shelf_ids),
+        )
+        cache_filter = or_(
+            cache_filter,
+            ub.MagicShelfCache.shelf_id.in_(magic_shelf_ids),
+        )
+    ub.session.query(ub.OpdsMagicShelfExposure).filter(
+        magic_exposure_filter
+    ).delete(synchronize_session=False)
+    ub.session.query(ub.HiddenMagicShelfTemplate).filter(hidden_magic_filter).delete(
+        synchronize_session=False
+    )
+    ub.session.query(ub.MagicShelfCache).filter(cache_filter).delete(
+        synchronize_session=False
+    )
+
+    direct_models = (
+        ub.DismissedDuplicateGroup,
+        ub.ShelfArchive,
+        ub.ReadBook,
+        ub.Downloads,
+        ub.Bookmark,
+        ub.ArchivedBook,
+        ub.RemoteAuthToken,
+        ub.User_Sessions,
+        ub.KoboSyncedBooks,
+        ub.KoboAnnotationSync,
+    )
+    for model in direct_models:
+        ub.session.query(model).filter(model.user_id == user_id).delete(
+            synchronize_session=False
+        )
+
+    for kobo_entry in ub.session.query(ub.KoboReadingState).filter(
+        ub.KoboReadingState.user_id == user_id
+    ).all():
+        ub.session.delete(kobo_entry)
+
+    if shelf_ids:
+        ub.session.query(ub.Shelf).filter(ub.Shelf.id.in_(shelf_ids)).delete(
+            synchronize_session=False
+        )
+    if magic_shelf_ids:
+        ub.session.query(ub.MagicShelf).filter(
+            ub.MagicShelf.id.in_(magic_shelf_ids)
+        ).delete(synchronize_session=False)
+
+
 def _delete_user(content):
-    if ub.session.query(ub.User).filter(ub.User.role.op('&')(constants.ROLE_ADMIN) == constants.ROLE_ADMIN,
-                                        ub.User.id != content.id).count():
-        if content.name != "Guest":
-            # Delete all books in shelfs belonging to user, all shelfs of user, downloadstat of user, read status
-            # and user itself
-            ub.session.query(ub.ReadBook).filter(content.id == ub.ReadBook.user_id).delete()
-            ub.session.query(ub.Downloads).filter(content.id == ub.Downloads.user_id).delete()
-            for us in ub.session.query(ub.Shelf).filter(content.id == ub.Shelf.user_id):
-                ub.session.query(ub.BookShelf).filter(us.id == ub.BookShelf.shelf).delete()
-            ub.session.query(ub.Shelf).filter(content.id == ub.Shelf.user_id).delete()
-            ub.session.query(ub.Bookmark).filter(content.id == ub.Bookmark.user_id).delete()
-            ub.session.query(ub.User).filter(ub.User.id == content.id).delete()
-            ub.session.query(ub.ArchivedBook).filter(ub.ArchivedBook.user_id == content.id).delete()
-            ub.session.query(ub.RemoteAuthToken).filter(ub.RemoteAuthToken.user_id == content.id).delete()
-            ub.session.query(ub.User_Sessions).filter(ub.User_Sessions.user_id == content.id).delete()
-            ub.session.query(ub.KoboSyncedBooks).filter(ub.KoboSyncedBooks.user_id == content.id).delete()
-            # delete KoboReadingState and all it's children
-            kobo_entries = ub.session.query(ub.KoboReadingState).filter(ub.KoboReadingState.user_id == content.id).all()
-            for kobo_entry in kobo_entries:
-                ub.session.delete(kobo_entry)
-            ub.session_commit()
-            log.info("User {} deleted".format(content.name))
-            return _("User '%(nick)s' deleted", nick=content.name)
-        else:
-            # log.warning(_("Can't delete Guest User"))
-            raise Exception(_("Can't delete Guest User"))
-    else:
-        # log.warning("No admin user remaining, can't delete user")
+    if not ub.session.query(ub.User).filter(
+        ub.User.role.op('&')(constants.ROLE_ADMIN) == constants.ROLE_ADMIN,
+        ub.User.id != content.id,
+    ).count():
         raise Exception(_("No admin user remaining, can't delete user"))
+    if content.name == "Guest":
+        raise Exception(_("Can't delete Guest User"))
+
+    user_id = content.id
+    user_name = content.name
+    personal_library = ub.session.query(ub.Library).filter_by(
+        kind="personal",
+        owner_user_id=user_id,
+    ).first()
+    deletion_state = None
+    deletion_context = nullcontext()
+    if personal_library is not None:
+        if personal_library.status != "disabled":
+            raise Exception(_(
+                "Disable the user's personal library before deleting the account."
+            ))
+        from . import library_control
+        deletion_context = library_control.personal_library_deletion_transaction(
+            ub.session,
+            personal_library,
+            preserve_outgoing_shares=True,
+        )
+
+    try:
+        with deletion_context as deletion_state:
+            shares = ub.session.query(ub.BookShare).filter_by(
+                shared_by_user_id=user_id
+            ).all()
+            for share in shares:
+                if not share.shared_by_name or share.shared_by_name == "Unknown user":
+                    share.shared_by_name = user_name
+                share.shared_by_user_id = None
+            _delete_user_owned_rows(user_id)
+            ub.session.query(ub.User).filter(ub.User.id == user_id).delete()
+            if personal_library is None:
+                ub.session.commit()
+    except Exception:
+        ub.session.rollback()
+        raise
+
+    log.info("User %s deleted", user_name)
+    if deletion_state and deletion_state.get("cleanup_error") is not None:
+        log.error(
+            "User %s deleted but personal-library cleanup remains pending at %s",
+            user_name,
+            deletion_state.get("quarantine_path"),
+        )
+        return _(
+            "User '%(nick)s' deleted; personal-library file cleanup is pending",
+            nick=user_name,
+        )
+    return _("User '%(nick)s' deleted", nick=user_name)
 
 
 def _handle_edit_user(to_save, content, languages, translations, kobo_support):

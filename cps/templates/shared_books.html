@@ -1,0 +1,201 @@
+{% extends "layout.html" %}
+{% block header %}
+<style>
+  .shared-ledger {
+    --ledger-ink: #e8eef2;
+    --ledger-muted: #9babb7;
+    --ledger-line: rgba(159, 203, 191, .2);
+    --ledger-mint: #70c8af;
+    --ledger-gold: #e5b45f;
+    margin: 1.2rem 0 4rem;
+  }
+  .shared-hero {
+    background:
+      linear-gradient(120deg, rgba(19, 42, 49, .96), rgba(19, 31, 43, .9)),
+      repeating-linear-gradient(90deg, transparent 0 39px, rgba(255,255,255,.025) 40px);
+    border: 1px solid var(--ledger-line);
+    border-radius: 3px;
+    box-shadow: 0 20px 55px rgba(0, 0, 0, .2);
+    margin-bottom: 2.4rem;
+    overflow: hidden;
+    padding: 2.6rem 3rem;
+    position: relative;
+  }
+  .shared-hero::after {
+    color: rgba(112, 200, 175, .15);
+    content: "⇄";
+    font-family: Georgia, serif;
+    font-size: 13rem;
+    line-height: 1;
+    position: absolute;
+    right: 2rem;
+    top: -2.1rem;
+    transform: rotate(-8deg);
+  }
+  .shared-kicker {
+    color: var(--ledger-mint);
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: .19em;
+    margin-bottom: .6rem;
+    text-transform: uppercase;
+  }
+  .shared-hero h1 {
+    color: var(--ledger-ink);
+    font-family: Charter, "Palatino Linotype", Georgia, serif;
+    font-size: clamp(3rem, 5vw, 5.4rem);
+    letter-spacing: -.035em;
+    margin: 0 0 .7rem;
+    max-width: 68rem;
+  }
+  .shared-hero p {
+    color: var(--ledger-muted);
+    font-size: 1.45rem;
+    line-height: 1.65;
+    margin: 0;
+    max-width: 63rem;
+    position: relative;
+    z-index: 1;
+  }
+  .shared-grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(29rem, 1fr));
+  }
+  .shared-card {
+    animation: ledger-in .45s both;
+    background: rgba(24, 35, 47, .76);
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 3px;
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    min-height: 19rem;
+    overflow: hidden;
+    position: relative;
+    transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+  }
+  .shared-card:hover {
+    border-color: rgba(112, 200, 175, .45);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .22);
+    transform: translateY(-3px);
+  }
+  .shared-folio {
+    align-items: center;
+    background: linear-gradient(180deg, rgba(112, 200, 175, .18), rgba(112, 200, 175, .04));
+    border-right: 1px solid var(--ledger-line);
+    color: var(--ledger-mint);
+    display: flex;
+    flex-direction: column;
+    font-family: Charter, Georgia, serif;
+    font-size: 3.2rem;
+    justify-content: center;
+    text-transform: uppercase;
+  }
+  .shared-folio small {
+    color: var(--ledger-muted);
+    font-family: inherit;
+    font-size: .85rem;
+    letter-spacing: .14em;
+    margin-top: .65rem;
+  }
+  .shared-card-body { padding: 1.55rem 1.7rem 1.45rem; }
+  .shared-card-head { align-items: center; display: flex; gap: .6rem; justify-content: space-between; }
+  .shared-direction {
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    color: var(--ledger-mint);
+    font-size: .95rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    padding: .2rem .7rem;
+    text-transform: uppercase;
+  }
+  .shared-direction.outgoing { color: var(--ledger-gold); }
+  .shared-date { color: #738592; font-size: 1.05rem; }
+  .shared-card h2 {
+    color: var(--ledger-ink);
+    font-family: Charter, "Palatino Linotype", Georgia, serif;
+    font-size: 2rem;
+    line-height: 1.15;
+    margin: 1.1rem 0 .35rem;
+  }
+  .shared-authors { color: var(--ledger-muted); margin-bottom: 1.35rem; }
+  .shared-route {
+    border-left: 2px solid var(--ledger-line);
+    color: #b8c4cc;
+    font-size: 1.1rem;
+    line-height: 1.55;
+    padding-left: 1rem;
+  }
+  .shared-route strong { color: var(--ledger-ink); font-weight: 600; }
+  .shared-arrow { color: var(--ledger-mint); padding: 0 .35rem; }
+  .shared-attribution { color: #82939f; font-size: 1.05rem; margin-top: .7rem; }
+  .shared-unavailable { color: #e6a76c; }
+  .shared-empty {
+    border: 1px dashed rgba(112, 200, 175, .35);
+    color: var(--ledger-muted);
+    padding: 5rem 2rem;
+    text-align: center;
+  }
+  .shared-empty .glyphicon { color: var(--ledger-mint); display: block; font-size: 3.5rem; margin-bottom: 1.2rem; }
+  @keyframes ledger-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (max-width: 600px) {
+    .shared-hero { padding: 2rem; }
+    .shared-hero::after { display: none; }
+    .shared-grid { grid-template-columns: 1fr; }
+    .shared-card { grid-template-columns: 5.2rem minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .shared-card { animation: none; transition: none; }
+  }
+</style>
+{% endblock %}
+{% block body %}
+<div class="shared-ledger">
+  <header class="shared-hero">
+    <div class="shared-kicker">{{ _('Library provenance ledger') }}</div>
+    <h1>{{ _('Shared Books') }}</h1>
+    <p>{{ _('Independent copies shared between libraries. These books remain in their destination library even if the original account is later removed.') }}</p>
+  </header>
+
+  {% if entries %}
+  <div class="shared-grid" aria-label="{{ _('Shared Books') }}">
+    {% for entry in entries %}
+    <article class="shared-card" style="animation-delay: {{ loop.index0 * 35 }}ms">
+      <div class="shared-folio" aria-hidden="true">
+        {{ entry.title[:1] if entry.available else '!' }}
+        <small>#{{ entry.share_id }}</small>
+      </div>
+      <div class="shared-card-body">
+        <div class="shared-card-head">
+          <span class="shared-direction {{ entry.direction }}">
+            {% if entry.direction == 'outgoing' %}{{ _('Shared by you') }}{% else %}{{ _('Received') }}{% endif %}
+          </span>
+          <time class="shared-date" datetime="{{ entry.created_at.isoformat() if entry.created_at else '' }}">
+            {{ (entry.created_at|formatdate) if entry.created_at else '' }}
+          </time>
+        </div>
+        <h2{% if not entry.available %} class="shared-unavailable"{% endif %}>{{ entry.title }}</h2>
+        <div class="shared-authors">{{ entry.authors }}</div>
+        <div class="shared-route">
+          <strong>{{ entry.source_library }}</strong>
+          <span class="shared-arrow" aria-label="{{ _('shared to') }}">→</span>
+          <strong>{{ entry.target_library }}</strong>
+          <div>{{ _('Visible copy in %(library)s', library=entry.displayed_library) }}</div>
+        </div>
+        <div class="shared-attribution">
+          {{ _('Shared by %(user)s', user=entry.shared_by) }}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="shared-empty">
+    <span class="glyphicon glyphicon-transfer" aria-hidden="true"></span>
+    <h2>{{ _('No shared books yet') }}</h2>
+    <p>{{ _('Books shared with a library you can access will appear here.') }}</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

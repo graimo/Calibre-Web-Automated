@@ -10,3 +10,16 @@ spec:
   resources:
     requests:
       storage: 100Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: calibre-libraries-pvc
+  namespace: media # Make sure this matches your namespace
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client # Change to your storage class
+  resources:
+    requests:
+      storage: 100Gi

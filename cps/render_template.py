@@ -74,6 +74,22 @@ def get_sidebar_config(kwargs=None):
     sidebar.append({"glyph": "glyphicon-book", "text": _('Books'), "link": 'web.index', "id": "new",
                     "visibility": constants.SIDEBAR_RECENT, 'public': True, "page": "root",
                     "show_text": _('Show recent books'), "config_show":False})
+    if (
+        constants.MULTI_LIBRARY_ENABLED
+        and current_user.is_authenticated
+        and not current_user.is_anonymous
+    ):
+        sidebar.append({
+            "glyph": "glyphicon-transfer",
+            "text": _("Shared Books"),
+            "link": "web.shared_books",
+            "id": "shared-books",
+            "visibility": constants.SIDEBAR_RECENT,
+            "public": True,
+            "page": "shared-books",
+            "show_text": _("Show Shared Books"),
+            "config_show": False,
+        })
     sidebar.append({"glyph": "glyphicon-fire", "text": _('Hot Books'), "link": 'web.books_list', "id": "hot",
                     "visibility": constants.SIDEBAR_HOT, 'public': True, "page": "hot",
                     "show_text": _('Show Hot Books'), "config_show": True})

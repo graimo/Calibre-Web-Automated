@@ -88,10 +88,19 @@ def _get_global_provider_enabled_map() -> dict:
             settings.get('metadata_providers_enabled', '{}')
         )
     except Exception as e:
-        # On any failure, treat as all enabled (empty dict = all default to enabled)
+        # Empty settings retain legacy defaults; subprocess-backed providers
+        # apply their safer opt-in default in _provider_is_globally_enabled.
         log.warning(f"Error loading provider enabled map: {e}")
         return {}
     # Remove redundant return
+
+
+def _provider_is_globally_enabled(enabled_map, provider_id):
+    # New subprocess-backed providers are opt-in until an administrator saves
+    # an explicit enablement choice in CWA settings.
+    default = constants.metadata_provider_enabled_by_default(provider_id)
+    return bool(enabled_map.get(provider_id, default))
+
 
 @meta.route("/metadata/provider")
 @user_login_required
@@ -107,7 +116,7 @@ def metadata_provider():
                 "active": ac,
                 "initial": ac,
                 "id": c.__id__,
-                "globally_enabled": bool(global_enabled.get(c.__id__, True)),
+                "globally_enabled": _provider_is_globally_enabled(global_enabled, c.__id__),
             }
         )
     return make_response(jsonify(provider))
@@ -136,7 +145,7 @@ def metadata_change_active_provider(prov_name):
         # Respect global disablement for preview search as well
         global_enabled = _get_global_provider_enabled_map()
         if provider is not None:
-            if bool(global_enabled.get(provider.__id__, True)):
+            if _provider_is_globally_enabled(global_enabled, provider.__id__):
                 try:
                     data = provider.search(new_state.get("query", ""))
                 except Exception as exc:
@@ -165,7 +174,7 @@ def metadata_search():
             meta = {
                 executor.submit(copy_current_request_context(c.search), query, static_cover, locale): c
                 for c in cl
-                if active.get(c.__id__, True) and bool(global_enabled.get(c.__id__, True))
+                if active.get(c.__id__, True) and _provider_is_globally_enabled(global_enabled, c.__id__)
             }
             for future in concurrent.futures.as_completed(meta):
                 try:

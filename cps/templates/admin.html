@@ -56,6 +56,9 @@
         {% endif %}
         <a class="btn btn-default" id="admin_new_user" href="{{url_for('admin.new_user')}}">{{_('Add New User')}}</a>
         <a class="btn btn-default" id="admin_profile_pictures" href="{{ url_for('profile_pictures.set_profile_picture') }}">{{ _('Manage Profile Pictures') }}</a>
+      {% if multi_library_enabled %}
+        <a class="btn btn-default" id="admin_library_access" href="{{ url_for('admin.library_memberships') }}">{{ _('Manage Library Access') }}</a>
+      {% endif %}
       {% if (config.config_login_type == 1) %}
         <div class="btn btn-default" id="import_ldap_users" data-toggle="modal" data-target="#StatusDialog">{{_('Import LDAP Users')}}</div>
       {% endif %}

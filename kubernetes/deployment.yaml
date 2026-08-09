@@ -27,6 +27,10 @@ spec:
               value: "2000"
             - name: TZ
               value: America/Los_Angeles # Change to your timezone
+            - name: MULTI_LIBRARY_ENABLED
+              value: "false"
+            - name: CALIBRE_LIBRARIES_ROOT
+              value: /calibre-libraries
           image: crocodilestick/calibre-web-automated:latest
           imagePullPolicy: Always #Always enables updates with a rollout restart
           name: calibre-web-automated
@@ -40,6 +44,8 @@ spec:
               name: calibre-web-automated-ingest
             - mountPath: /calibre-library
               name: calibre-library
+            - mountPath: /calibre-libraries
+              name: calibre-libraries
           resources: {} # Add resource requests/limits here if needed
       restartPolicy: Always
       # Volumes will vary based on your storage solution - here Longhorn PVCs are used
@@ -52,6 +58,9 @@ spec:
         - name: calibre-library
           persistentVolumeClaim:
             claimName: calibre-library-pvc
+        - name: calibre-libraries
+          persistentVolumeClaim:
+            claimName: calibre-libraries-pvc
         - name: calibre-web-automated-ingest
           hostPath:
             path: /nas/path/to/import-ebooks
