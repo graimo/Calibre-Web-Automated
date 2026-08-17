@@ -749,6 +749,10 @@ def set_cwa_settings():
     if 'duplicate_scan_cron' not in string_settings:
         string_settings.append('duplicate_scan_cron')
 
+    # Ensure the Google Books API key is treated as a string even if default is empty
+    if 'google_books_api_key' not in string_settings:
+        string_settings.append('google_books_api_key')
+
     # Ensure archived cleanup schedule fields are treated as strings
     if 'archived_cleanup_schedule' not in string_settings:
         string_settings.append('archived_cleanup_schedule')

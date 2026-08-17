@@ -666,6 +666,26 @@
             </small>
           </div>
         </div>
+        <div class="form-group" style="margin-top: 20px;">
+          <label for="google_books_api_key" class="settings-section-header" style="padding-right: 10px; margin-bottom: 6px !important; padding-bottom: 0px !important; font-weight: 600;">{{_('Google Books API Key:')}}</label>
+          <input type="text"
+                 name="google_books_api_key"
+                 id="google_books_api_key"
+                 value="{{ cwa_settings.get('google_books_api_key', '') }}"
+                 autocomplete="off"
+                 placeholder="AIza..."
+                 style="width: 100%;
+                        max-width: 480px;
+                        padding: 5px;
+                        border: 1px solid transparent;
+                        border-radius: 4px;
+                        background-color: #151e2680;">
+          <div class="cwa-settings-tip" style="margin-top: 8px;">
+            <small style="color: var(--color-info-text);">
+              💡 <strong>{{_('Tip')}}:</strong> {{_('Optional. A free Google Books API key raises the rate limit and avoids "429 Too Many Requests" errors during metadata search. Leave empty to use the anonymous (rate-limited) access. The GOOGLE_BOOKS_API_KEY environment variable, if set, takes precedence.')}}
+            </small>
+          </div>
+        </div>
     </div>
 
   <div class="settings-container" id="settings-processing" data-settings-section>
