@@ -280,15 +280,95 @@ def _provision_personal_library_unlocked(user, app_session=None, managed_root=No
         return library
 
 
+def _ingest_root():
+    """Return the ingest folder path from dirs.json, or None."""
+    try:
+        import json
+        with open("/app/calibre-web-automated/dirs.json") as handle:
+            return json.load(handle).get("ingest_folder")
+    except (OSError, ValueError):
+        return None
+
+
+def _safe_username_dir(username):
+    username = (username or "").strip()
+    if not username or username in (".", "..") \
+            or "/" in username or "\\" in username or "\0" in username:
+        return None
+    return username
+
+
+def ensure_user_ingest_dir(user):
+    """Create the per-user ingest subfolder (<ingest_folder>/<username>).
+
+    An external automation drops a book there and the ingest processor routes it
+    to that user's default library. Idempotent and best-effort. Created by the
+    web process (running as PUID/PGID), so ownership matches the ingest folder.
+    """
+    if _is_anonymous(user):
+        return None
+    ingest_root = _ingest_root()
+    username = _safe_username_dir(getattr(user, "name", ""))
+    if not ingest_root or not username:
+        if username is None:
+            log.warning("Skipping ingest dir for unsafe username: %r", getattr(user, "name", ""))
+        return None
+    path = os.path.join(ingest_root, username)
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except OSError as error:
+        log.warning("Could not create per-user ingest dir %s: %s", path, error)
+        return None
+
+
+def resolve_ingest_target(username, app_session=None):
+    """Resolve a username to its default library's (root_path, metadata_db).
+
+    Returns None when it cannot be resolved (no user, no active default personal
+    library, multi-library disabled, ...) so the caller falls back to the legacy
+    library. Safe to call from the ingest worker process.
+    """
+    if not username:
+        return None
+    session = app_session or ub.session
+    try:
+        user = session.query(ub.User).filter(ub.User.name == username).one_or_none()
+        if user is None:
+            return None
+        membership = (
+            session.query(ub.LibraryMembership)
+            .filter(
+                ub.LibraryMembership.user_id == user.id,
+                ub.LibraryMembership.is_default.is_(True),
+            )
+            .one_or_none()
+        )
+        if membership is None:
+            return None
+        library = session.query(ub.Library).filter_by(id=membership.library_id).one_or_none()
+        if library is None or library.status != "active":
+            return None
+        return (library.root_path, _metadata_path(library.root_path))
+    except Exception as error:  # pragma: no cover - defensive; caller falls back
+        log.warning("resolve_ingest_target(%r) failed: %s", username, error)
+        return None
+
+
 def provision_personal_library(user, app_session=None, managed_root=None, initializer=None):
     """Serialize process-local provisioning to avoid duplicate Calibre writers."""
     with _PROVISION_LOCK:
-        return _provision_personal_library_unlocked(
+        library = _provision_personal_library_unlocked(
             user,
             app_session,
             managed_root,
             initializer,
         )
+    # Create the user's dedicated ingest subfolder alongside their library, so
+    # every provisioned (i.e. every created) user gets a ready dropzone.
+    if library is not None and getattr(library, "status", None) == "active":
+        ensure_user_ingest_dir(user)
+    return library
 
 
 def ensure_legacy_library_registration(app_session, legacy_root, calibre_uuid=None):
