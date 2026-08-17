@@ -207,8 +207,23 @@
       {% endif %}
     </div>
     
-    <!-- eReader Configuration Card -->
+    <!-- My Devices Card -->
+    {% if not content.role_anonymous() %}
+    {% set _dev = content.enabled_device_profiles() %}
     <div class="settings-container" style="max-width: none; margin-inline: 0rem;">
+      <h4 class="settings-section-header">{{_('My Devices')}}</h4>
+      <p class="cwa-settings-tip">{{_('Select the devices you use so only the relevant settings and features are shown. Leave everything unticked to show all.')}}</p>
+      <div class="form-group">
+        <div><input type="checkbox" name="device_kindle" id="device_kindle" {% if 'kindle' in _dev %}checked{% endif %} style="accent-color: var(--color-secondary);"> <label for="device_kindle" style="display:inline;">{{_('Kindle (Amazon)')}}</label></div>
+        <div><input type="checkbox" name="device_kobo" id="device_kobo" {% if 'kobo' in _dev %}checked{% endif %} style="accent-color: var(--color-secondary);"> <label for="device_kobo" style="display:inline;">{{_('Kobo')}}</label></div>
+        <div><input type="checkbox" name="device_koreader" id="device_koreader" {% if 'koreader' in _dev %}checked{% endif %} style="accent-color: var(--color-secondary);"> <label for="device_koreader" style="display:inline;">{{_('KOReader (any device)')}}</label></div>
+        <div><input type="checkbox" name="device_generic" id="device_generic" {% if 'generic' in _dev %}checked{% endif %} style="accent-color: var(--color-secondary);"> <label for="device_generic" style="display:inline;">{{_('Other / generic e-reader')}}</label></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- eReader Configuration Card -->
+    <div class="settings-container" style="max-width: none; margin-inline: 0rem;{% if not content.role_anonymous() and not (content.has_device_profile('kindle') or content.has_device_profile('generic')) %}display:none;{% endif %}">
       <h4 class="settings-section-header">{{_('eReader Configuration')}}</h4>
       
       <div class="form-group">
@@ -319,7 +334,7 @@
       {% endif %}
       
       {% if kobo_support and not new_user %}
-      <div style="margin-top: 25px;">
+      <div style="margin-top: 25px;{% if not content.has_device_profile('kobo') %}display:none;{% endif %}">
         <label style="display: block; margin-bottom: 12px; font-weight: bold;">{{ _('Kobo Sync Token')}}</label>
         <div style="margin-bottom: 10px;">
           <a class="btn btn-default" id="config_create_kobo_token" data-toggle="modal" data-target="#modal_kobo_token" data-remote="false" href="{{ url_for('kobo_auth.generate_auth_token', user_id=content.id) }}">{{_('Create/View')}}</a>

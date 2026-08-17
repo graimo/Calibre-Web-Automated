@@ -215,6 +215,18 @@ class UserBase:
     def show_detail_random(self):
         return self.check_visibility(constants.DETAIL_RANDOM)
 
+    def enabled_device_profiles(self):
+        # Empty / unset (legacy users) means every profile is enabled, so no
+        # device-specific setting or feature is ever hidden unexpectedly.
+        raw = (getattr(self, "device_profiles", "") or "").strip()
+        if not raw:
+            return list(constants.DEVICE_PROFILES)
+        selected = [p.strip() for p in raw.split(",") if p.strip() in constants.DEVICE_PROFILES]
+        return selected or list(constants.DEVICE_PROFILES)
+
+    def has_device_profile(self, key):
+        return key in self.enabled_device_profiles()
+
     def list_denied_tags(self):
         mct = self.denied_tags or ""
         return [strip_whitespaces(t) for t in mct.split(",")]
@@ -281,6 +293,8 @@ class User(UserBase, Base):
     view_settings = Column(JSON, default={})
     kobo_only_shelves_sync = Column(Integer, default=0)
     opds_only_shelves_sync = Column(Integer, default=0)
+    # Comma-separated device profiles (see constants.DEVICE_PROFILES). Empty = all.
+    device_profiles = Column(String, default="")
     hardcover_token = Column(String, unique=True, default=None)
     # New per-user theme (0=default/light, 1=caliBlur) replacing global-only behavior
     theme = Column(Integer, default=1)
@@ -460,6 +474,7 @@ class Anonymous(AnonymousUserMixin, UserBase):
         self.hardcover_token = None
         self.kobo_only_shelves_sync = None
         self.opds_only_shelves_sync = None
+        self.device_profiles = None
         self.view_settings = None
         self.allowed_column_value = None
         self.allowed_tags = None
@@ -493,6 +508,7 @@ class Anonymous(AnonymousUserMixin, UserBase):
         self.view_settings = data.view_settings
         self.kobo_only_shelves_sync = data.kobo_only_shelves_sync
         self.opds_only_shelves_sync = data.opds_only_shelves_sync
+        self.device_profiles = getattr(data, "device_profiles", "")
         self.hardcover_token = data.hardcover_token
         self.auto_send_enabled = data.auto_send_enabled
     def role_admin(self):
@@ -1168,6 +1184,15 @@ def migrate_user_table(engine, _session):
     except exc.OperationalError:
         _safe_session_rollback(_session, "user.opds_only_shelves_sync")
         _run_ddl_with_retry(engine, "ALTER TABLE user ADD column 'opds_only_shelves_sync' Integer DEFAULT 0")
+
+    # Migration for per-user device profiles. Default '' means "all profiles",
+    # so existing/legacy users keep seeing every device-specific setting.
+    try:
+        _session.query(exists().where(User.device_profiles)).scalar()
+        _session.commit()
+    except exc.OperationalError:
+        _safe_session_rollback(_session, "user.device_profiles")
+        _run_ddl_with_retry(engine, "ALTER TABLE user ADD column 'device_profiles' String DEFAULT ''")
     # Migration for per-user theme column
     try:
         _session.query(exists().where(User.theme)).scalar()

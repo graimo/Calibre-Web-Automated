@@ -2461,7 +2461,13 @@ def change_profile(kobo_support, hardcover_support, local_oauth_check, oauth_sta
         current_user.auto_send_enabled = to_save.get("auto_send_enabled") == "on"
         current_user.auto_metadata_fetch = to_save.get("auto_metadata_fetch") == "on"
         current_user.allow_additional_ereader_emails = to_save.get("allow_additional_ereader_emails") == "on"
-        
+
+        # Device profiles: which device-specific settings/features the user sees.
+        # Nothing ticked -> store "" which is treated as "all profiles".
+        selected_profiles = [p for p in constants.DEVICE_PROFILES
+                             if to_save.get("device_" + p) == "on"]
+        current_user.device_profiles = ",".join(selected_profiles)
+
         # Handle hidden magic shelf templates and custom shelves
         from . import magic_shelf
         if not current_user.is_anonymous:

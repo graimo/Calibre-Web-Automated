@@ -55,6 +55,11 @@ MULTI_LIBRARY_ENABLED = os.environ.get("MULTI_LIBRARY_ENABLED", "false").lower()
 )
 CALIBRE_LIBRARIES_ROOT = os.environ.get("CALIBRE_LIBRARIES_ROOT", "/calibre-libraries")
 
+# Per-user device profiles. Drive which device-specific settings/features are
+# shown to a user. An empty selection (legacy users, or nothing ticked) means
+# "all profiles" so nothing is ever hidden unexpectedly.
+DEVICE_PROFILES = ("kindle", "kobo", "koreader", "generic")
+
 # Subprocess-backed providers must be explicitly enabled by an administrator.
 METADATA_PROVIDER_DEFAULTS = {"calibre": False}
 
