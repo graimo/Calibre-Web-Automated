@@ -39,9 +39,9 @@ class CalibreMetadataExecutableNotFound(CalibreMetadataError):
 class CalibreMetadataProcessError(CalibreMetadataError):
     """Raised when the Calibre command exits unsuccessfully."""
 
-    def __init__(self, returncode: int):
+    def __init__(self, returncode: int, detail: str = ""):
         self.returncode = returncode
-        super().__init__(f"fetch-ebook-metadata exited with status {returncode}")
+        super().__init__(f"fetch-ebook-metadata exited with status {returncode}{detail}")
 
 
 class CalibreMetadataTimeout(CalibreMetadataError):
@@ -323,7 +323,7 @@ class CalibreMetadataService:
                     command,
                     shell=False,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     start_new_session=os.name == "posix",
                 )
             except FileNotFoundError as error:
@@ -361,6 +361,34 @@ class CalibreMetadataService:
             )
             stdout_reader.start()
 
+            # Capture stderr so failures/timeouts are diagnosable (Calibre logs
+            # which sources it tried and why they failed there). Bounded to avoid
+            # unbounded growth; the pipe must be drained or the child can block.
+            stderr_tail = bytearray()
+
+            def read_stderr() -> None:
+                try:
+                    if process.stderr is None:
+                        return
+                    while chunk := process.stderr.read(4096):
+                        stderr_tail.extend(chunk)
+                        if len(stderr_tail) > 8192:
+                            del stderr_tail[:-8192]
+                except OSError:
+                    pass
+
+            stderr_reader = threading.Thread(
+                target=read_stderr,
+                name="calibre-metadata-stderr",
+                daemon=True,
+            )
+            stderr_reader.start()
+
+            def _stderr_snippet() -> str:
+                stderr_reader.join(timeout=1)
+                text = bytes(stderr_tail).decode("utf-8", "replace").strip()
+                return (" | calibre stderr: " + text[-500:]) if text else ""
+
             try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired as error:
@@ -368,7 +396,7 @@ class CalibreMetadataService:
                 process.wait()
                 stdout_reader.join()
                 raise CalibreMetadataTimeout(
-                    f"fetch-ebook-metadata exceeded {timeout:g} seconds"
+                    f"fetch-ebook-metadata exceeded {timeout:g} seconds{_stderr_snippet()}"
                 ) from error
 
             stdout_reader.join()
@@ -381,7 +409,7 @@ class CalibreMetadataService:
                     "Calibre metadata output could not be read"
                 ) from output_read_error[0]
             if process.returncode:
-                raise CalibreMetadataProcessError(process.returncode)
+                raise CalibreMetadataProcessError(process.returncode, _stderr_snippet())
 
             metadata = parse_opf(bytes(stdout))
             cover = None
