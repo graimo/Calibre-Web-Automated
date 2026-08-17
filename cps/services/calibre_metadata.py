@@ -22,10 +22,70 @@ from pathlib import Path
 from typing import Mapping, Optional, Sequence, Union
 
 DEFAULT_EXECUTABLE = "fetch-ebook-metadata"
+DEFAULT_DEBUG_EXECUTABLE = "calibre-debug"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 DEFAULT_MAX_COVER_BYTES = 16 * 1024 * 1024
 _IDENTIFIER_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+# Delimiter used to separate the individual OPF documents printed by the
+# identify helper script (see _IDENTIFY_SCRIPT). Must not appear in OPF output.
+_CANDIDATE_DELIM = "<<<CWA-OPF-DELIM>>>"
+
+# Script executed via `calibre-debug -c`. Unlike `fetch-ebook-metadata` (which
+# merges every source into one OPF), Calibre's identify() returns a ranked list
+# of candidates. Parameters are passed via environment variables (CWA_ID_*) to
+# avoid any shell quoting/injection. Calibre's own logging is muted / redirected
+# to stderr so stdout carries only the delimited OPF documents.
+_IDENTIFY_SCRIPT = r"""
+import os, sys
+from threading import Event
+try:
+    from calibre.ebooks.metadata.sources.identify import identify
+    from calibre.ebooks.metadata.opf2 import metadata_to_opf
+    from calibre.utils.logging import Log
+except Exception as e:
+    sys.stderr.write("cwa-import-error: %r\n" % (e,))
+    sys.exit(3)
+
+title = os.environ.get("CWA_ID_TITLE") or None
+authors = [a for a in (os.environ.get("CWA_ID_AUTHORS") or "").split("\n") if a] or None
+isbn = os.environ.get("CWA_ID_ISBN") or None
+timeout = int(os.environ.get("CWA_ID_TIMEOUT") or "30")
+max_results = int(os.environ.get("CWA_ID_MAX") or "5")
+identifiers = {}
+if isbn:
+    identifiers["isbn"] = isbn
+
+log = Log()
+try:
+    log.outputs = []
+except Exception:
+    pass
+abort = Event()
+real_stdout = sys.stdout
+sys.stdout = sys.stderr
+try:
+    results = identify(log, abort, title=title, authors=authors,
+                       identifiers=identifiers, timeout=timeout)
+except Exception as e:
+    sys.stdout = real_stdout
+    sys.stderr.write("cwa-identify-error: %r\n" % (e,))
+    sys.exit(4)
+sys.stdout = real_stdout
+
+parts = []
+for mi in (results or [])[:max_results]:
+    try:
+        opf = metadata_to_opf(mi)
+        if isinstance(opf, bytes):
+            opf = opf.decode("utf-8", "replace")
+        parts.append(opf)
+    except Exception as e:
+        sys.stderr.write("cwa-opf-error: %r\n" % (e,))
+real_stdout.write(("\n<<<CWA-OPF-DELIM>>>\n").join(parts))
+real_stdout.flush()
+"""
 
 
 class CalibreMetadataError(RuntimeError):
@@ -237,16 +297,160 @@ class CalibreMetadataService:
         self,
         executable: Union[str, os.PathLike[str]] = DEFAULT_EXECUTABLE,
         *,
+        debug_executable: Union[str, os.PathLike[str]] = DEFAULT_DEBUG_EXECUTABLE,
         max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
         max_cover_bytes: int = DEFAULT_MAX_COVER_BYTES,
     ) -> None:
         self.executable = os.fspath(executable)
-        if not self.executable:
+        self.debug_executable = os.fspath(debug_executable)
+        if not self.executable or not self.debug_executable:
             raise ValueError("executable must not be empty")
         if max_output_bytes <= 0 or max_cover_bytes <= 0:
             raise ValueError("output limits must be positive")
         self.max_output_bytes = max_output_bytes
         self.max_cover_bytes = max_cover_bytes
+
+    def _run_capture(self, command, timeout, env=None):
+        """Run a command with a wall-clock timeout, capturing stdout and a
+        bounded stderr tail. Returns (returncode, stdout_bytes, stderr_snippet,
+        timed_out). The process group is killed on timeout / oversized output."""
+        try:
+            process = subprocess.Popen(  # nosec B603
+                command,
+                shell=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=os.name == "posix",
+                env=env,
+            )
+        except FileNotFoundError as error:
+            raise CalibreMetadataExecutableNotFound(
+                "%s executable was not found" % command[0]
+            ) from error
+        except OSError as error:
+            raise CalibreMetadataError("%s could not be started" % command[0]) from error
+
+        stdout = bytearray()
+        stderr_tail = bytearray()
+        output_too_large = threading.Event()
+        output_read_error: list[OSError] = []
+
+        def read_stdout() -> None:
+            try:
+                if process.stdout is None:
+                    raise OSError("output pipe is unavailable")
+                read_size = min(64 * 1024, self.max_output_bytes + 1)
+                while chunk := process.stdout.read(read_size):
+                    if len(stdout) + len(chunk) > self.max_output_bytes:
+                        output_too_large.set()
+                        _terminate_process_group(process)
+                        return
+                    stdout.extend(chunk)
+            except OSError as error:
+                output_read_error.append(error)
+                _terminate_process_group(process)
+
+        def read_stderr() -> None:
+            try:
+                if process.stderr is None:
+                    return
+                while chunk := process.stderr.read(4096):
+                    stderr_tail.extend(chunk)
+                    if len(stderr_tail) > 8192:
+                        del stderr_tail[:-8192]
+            except OSError:
+                pass
+
+        t_out = threading.Thread(target=read_stdout, daemon=True)
+        t_err = threading.Thread(target=read_stderr, daemon=True)
+        t_out.start()
+        t_err.start()
+
+        timed_out = False
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(process)
+            process.wait()
+            timed_out = True
+
+        t_out.join()
+        t_err.join(timeout=1)
+        snippet = bytes(stderr_tail).decode("utf-8", "replace").strip()
+        snippet = (" | calibre stderr: " + snippet[-500:]) if snippet else ""
+
+        if output_too_large.is_set():
+            raise CalibreMetadataOutputTooLarge(
+                "Calibre metadata output exceeds the configured limit"
+            )
+        if output_read_error:
+            raise CalibreMetadataError(
+                "Calibre metadata output could not be read"
+            ) from output_read_error[0]
+        return process.returncode, bytes(stdout), snippet, timed_out
+
+    def fetch_candidates(
+        self,
+        *,
+        title: Optional[str] = None,
+        authors: Union[str, Sequence[str], None] = None,
+        isbn: Optional[str] = None,
+        identifiers: Optional[Mapping[str, str]] = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_results: int = 8,
+    ) -> "list[CalibreMetadata]":
+        """Return multiple ranked metadata candidates via Calibre's identify()."""
+        if (
+            not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be a positive finite number")
+
+        title = _validate_text("title", title, 1000)
+        author_list = _normalize_authors(authors)
+        isbn = _validate_text("isbn", isbn, 64)
+        identifier_map = _normalize_identifiers(identifiers)
+        if isbn is None:
+            isbn = identifier_map.pop("isbn", None)
+        if not any((title, author_list, isbn)):
+            raise ValueError("at least one title, author or ISBN is required")
+
+        # Give Calibre a shorter inner timeout than the outer wall-clock wait so
+        # it can finish (startup included) before the wrapper kills it.
+        inner_timeout = max(1, math.ceil(timeout) - 5)
+        try:
+            max_results = max(1, min(int(max_results), 20))
+        except (TypeError, ValueError):
+            max_results = 8
+
+        env = dict(os.environ)
+        env["CWA_ID_TITLE"] = title or ""
+        env["CWA_ID_AUTHORS"] = "\n".join(author_list)
+        env["CWA_ID_ISBN"] = isbn or ""
+        env["CWA_ID_TIMEOUT"] = str(inner_timeout)
+        env["CWA_ID_MAX"] = str(max_results)
+
+        command = [self.debug_executable, "-c", _IDENTIFY_SCRIPT]
+        returncode, out, snippet, timed_out = self._run_capture(command, timeout, env)
+        if timed_out:
+            raise CalibreMetadataTimeout(
+                f"calibre-debug identify exceeded {timeout:g} seconds{snippet}"
+            )
+        if returncode:
+            raise CalibreMetadataProcessError(returncode, snippet)
+
+        text = out.decode("utf-8", "replace")
+        candidates: list[CalibreMetadata] = []
+        for chunk in text.split(_CANDIDATE_DELIM):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            try:
+                candidates.append(parse_opf(chunk))
+            except CalibreMetadataError:
+                continue
+        return candidates
 
     def fetch(
         self,

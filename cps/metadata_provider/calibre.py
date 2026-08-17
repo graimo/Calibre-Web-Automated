@@ -50,51 +50,71 @@ class Calibre(Metadata):
             return []
         try:
             try:
-                result = self._service.fetch(
+                # Preferred path: identify() returns a ranked list of candidates,
+                # like the Calibre desktop "Download metadata" dialog.
+                candidates = self._service.fetch_candidates(
                     title=query,
                     timeout=self.FETCH_TIMEOUT,
-                    fetch_cover=True,
+                    max_results=8,
                 )
             except CalibreMetadataError as error:
-                log.warning("Calibre metadata search failed: %s", error)
-                return []
+                # Fallback: single merged OPF (with cover) via fetch-ebook-metadata.
+                log.warning("Calibre identify failed, falling back to single result: %s", error)
+                try:
+                    result = self._service.fetch(
+                        title=query,
+                        timeout=self.FETCH_TIMEOUT,
+                        fetch_cover=True,
+                    )
+                except CalibreMetadataError as fallback_error:
+                    log.warning("Calibre metadata search failed: %s", fallback_error)
+                    return []
+                if not result.metadata.title:
+                    return []
+                cover = self._cover_data_uri(result.cover) or generic_cover
+                return [self._to_record(result.metadata, 0, cover)]
         finally:
             _CALIBRE_SEARCH_SLOTS.release()
 
-        metadata = result.metadata
-        if not metadata.title:
-            return []
+        records = []
+        seen_ids = set()
+        for index, metadata in enumerate(candidates):
+            if not metadata.title:
+                continue
+            record = self._to_record(metadata, index, generic_cover)
+            if record.id in seen_ids:
+                record.id = "{}#{}".format(record.id, index)
+            seen_ids.add(record.id)
+            records.append(record)
+        return records
 
-        cover = self._cover_data_uri(result.cover) or generic_cover
+    def _to_record(self, metadata, index: int, cover: str) -> MetaRecord:
         record_id = (
             metadata.identifiers.get("isbn")
             or next(iter(metadata.identifiers.values()), None)
-            or metadata.title
+            or "{}#{}".format(metadata.title, index)
         )
-
-        return [
-            MetaRecord(
-                id=record_id,
-                title=metadata.title,
-                authors=metadata.authors,
-                url=self.META_URL,
-                source=MetaSourceInfo(
-                    id=self.__id__,
-                    description=self.DESCRIPTION,
-                    link=self.META_URL,
-                ),
-                cover=cover,
-                description=metadata.description,
-                series=metadata.series,
-                series_index=metadata.series_index,
-                identifiers=metadata.identifiers,
-                publisher=metadata.publisher,
-                publishedDate=metadata.published_date,
-                rating=(metadata.rating / 2 if metadata.rating is not None else 0),
-                languages=metadata.languages,
-                tags=metadata.tags,
-            )
-        ]
+        return MetaRecord(
+            id=record_id,
+            title=metadata.title,
+            authors=metadata.authors,
+            url=self.META_URL,
+            source=MetaSourceInfo(
+                id=self.__id__,
+                description=self.DESCRIPTION,
+                link=self.META_URL,
+            ),
+            cover=cover,
+            description=metadata.description,
+            series=metadata.series,
+            series_index=metadata.series_index,
+            identifiers=metadata.identifiers,
+            publisher=metadata.publisher,
+            publishedDate=metadata.published_date,
+            rating=(metadata.rating / 2 if metadata.rating is not None else 0),
+            languages=metadata.languages,
+            tags=metadata.tags,
+        )
 
     @staticmethod
     def _cover_data_uri(cover: Optional[bytes]) -> str:
