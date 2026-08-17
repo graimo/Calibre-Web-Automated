@@ -336,18 +336,32 @@ def resolve_ingest_target(username, app_session=None):
         user = session.query(ub.User).filter(ub.User.name == username).one_or_none()
         if user is None:
             return None
-        membership = (
-            session.query(ub.LibraryMembership)
-            .filter(
-                ub.LibraryMembership.user_id == user.id,
-                ub.LibraryMembership.is_default.is_(True),
-            )
+
+        # Prefer the user's own personal library. Relying on the is_default flag
+        # alone is fragile: the shared "legacy" library is often the default, so
+        # per-user routing must target the personal library first.
+        library = (
+            session.query(ub.Library)
+            .filter_by(kind="personal", owner_user_id=user.id, status="active")
             .one_or_none()
         )
-        if membership is None:
-            return None
-        library = session.query(ub.Library).filter_by(id=membership.library_id).one_or_none()
-        if library is None or library.status != "active":
+        if library is None:
+            # Fall back to the user's default membership (may be a shared library).
+            membership = (
+                session.query(ub.LibraryMembership)
+                .filter(
+                    ub.LibraryMembership.user_id == user.id,
+                    ub.LibraryMembership.is_default.is_(True),
+                )
+                .one_or_none()
+            )
+            if membership is not None:
+                candidate = session.query(ub.Library).filter_by(
+                    id=membership.library_id
+                ).one_or_none()
+                if candidate is not None and candidate.status == "active":
+                    library = candidate
+        if library is None:
             return None
         return (library.root_path, _metadata_path(library.root_path))
     except Exception as error:  # pragma: no cover - defensive; caller falls back
