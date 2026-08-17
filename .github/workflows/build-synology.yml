@@ -49,6 +49,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
+            type=raw,value=latest
             type=raw,value=synology
             type=sha,prefix=synology-,format=long
           labels: |
