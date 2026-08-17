@@ -289,6 +289,14 @@ class Enforcer:
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
 
+            # The book_format_checksums table only exists when KOReader sync is
+            # enabled (see cps/db.py ensure_calibre_db_tables). Skip the checksum
+            # write entirely when the feature is off to avoid "no such table"
+            # errors on every cover/metadata enforcement.
+            from cps.progress_syncing.settings import is_koreader_sync_enabled
+            if not is_koreader_sync_enabled():
+                return
+
             from cps.progress_syncing.checksums import calculate_koreader_partial_md5, store_checksum, CHECKSUM_VERSION
 
             # Calculate new checksum

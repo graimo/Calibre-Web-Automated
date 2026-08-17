@@ -254,10 +254,11 @@
   .cwa-no-results { display: none; padding: 5rem 2rem; border: 1px dashed rgba(248,190,3,.42); border-radius: var(--cwa-radius); background: var(--cwa-accent-soft); text-align: center; }
   .cwa-no-results.is-visible { display: block; }
   .cwa-no-results strong { display: block; margin-bottom: .7rem; color: #fff; font-size: 1.8rem; }
-  .cwa-settings-actions { position: sticky; z-index: 20; bottom: 1.2rem; display: flex; justify-content: space-between; gap: 1.2rem; margin-top: 2.5rem; padding: 1.2rem; border: 1px solid var(--cwa-line); border-radius: 11px; background: rgba(12,21,29,.92); box-shadow: 0 16px 40px rgba(0,0,0,.32); backdrop-filter: blur(18px); }
-  #cwa-settings-page .cwa-settings-actions input[type="submit"] { min-height: 44px; padding: .9rem 1.5rem; border-radius: 7px; }
-  #cwa-settings-page .cwa-settings-actions input[value="Submit"] { order: 2; border-color: var(--cwa-accent); background: var(--cwa-accent); color: #15191d; font-weight: 800; }
-  #cwa-settings-page .cwa-settings-actions input[value="Apply Default Settings"] { order: 1; border-color: rgba(239,119,111,.4); background: rgba(239,119,111,.08); color: #ffc0bb; }
+  .cwa-settings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 1rem; margin-top: 2.5rem; padding: 1.2rem 1.4rem; border: 1px solid var(--cwa-line); border-radius: 11px; background: var(--cwa-panel); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+  #cwa-settings-page .cwa-settings-actions input[type="submit"] { min-height: 44px; padding: .9rem 1.6rem; border-radius: 7px; border: 1px solid var(--cwa-line); font-weight: 700; cursor: pointer; transition: filter .15s ease, background-color .15s ease; }
+  #cwa-settings-page .cwa-settings-actions input[type="submit"]:hover { filter: brightness(1.08); }
+  #cwa-settings-page .cwa-settings-actions input[value="Submit"] { order: 2; border-color: var(--cwa-accent); background: var(--cwa-accent); color: #15191d; }
+  #cwa-settings-page .cwa-settings-actions input[value="Apply Default Settings"] { order: 1; border-color: rgba(239,119,111,.55); background: rgba(239,119,111,.14); color: #ffb3ad; }
   #cwa-settings-page [hidden] { display: none !important; }
   #cwa-settings-page :focus-visible { outline: 2px solid var(--cwa-accent); outline-offset: 3px; }
   @media (max-width: 980px) {
@@ -285,7 +286,7 @@
     #cwa-settings-page .form-group[style*="display: flex"] { display: block !important; }
     #cwa-settings-page .form-group[style*="display: flex"] > :last-child { margin-top: .8rem; margin-left: 0 !important; }
     .provider_enable_item { flex-basis: 100%; }
-    .cwa-settings-actions { bottom: .6rem; flex-direction: column; }
+    .cwa-settings-actions { flex-direction: column; align-items: stretch; }
     #cwa-settings-page .cwa-settings-actions input[type="submit"] { width: 100%; }
   }
   @media (prefers-reduced-motion: reduce) {

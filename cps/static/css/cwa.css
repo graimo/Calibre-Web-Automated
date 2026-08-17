@@ -1,3 +1,63 @@
+/* =========================================================================
+   CWA custom theme (global)
+   Extracted from the CWA settings page (#cwa-settings-page) so the same visual
+   language applies across the whole app. This is a conservative layer: design
+   tokens + generic component accents only. Page-specific layouts (hero header,
+   settings rail, action bar, ...) stay scoped in their own templates.
+   ========================================================================= */
+:root {
+    --cwa-panel: rgba(18, 28, 38, .88);
+    --cwa-panel-soft: rgba(12, 21, 29, .7);
+    --cwa-line: rgba(255, 255, 255, .11);
+    --cwa-accent: var(--color-secondary, #f8be03);
+    --cwa-accent-soft: rgba(248, 190, 3, .12);
+    --cwa-text: var(--color-text, #f2f5f7);
+    --cwa-muted: #aeb9c3;
+    --cwa-success: #67d6a3;
+    --cwa-radius: 14px;
+}
+
+/* Accent focus ring on form controls, app-wide */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+select:focus,
+textarea:focus {
+    border-color: var(--cwa-accent) !important;
+    box-shadow: 0 0 0 3px var(--cwa-accent-soft) !important;
+}
+
+/* Consistent accent for checkboxes and radios */
+input[type="checkbox"],
+input[type="radio"] {
+    accent-color: var(--cwa-accent);
+}
+
+/* Visible keyboard focus everywhere */
+:focus-visible {
+    outline: 2px solid var(--cwa-accent);
+    outline-offset: 3px;
+}
+
+/* Primary actions pick up the accent across the app */
+.btn-primary {
+    border-color: var(--cwa-accent);
+    background: var(--cwa-accent);
+    color: #15191d;
+    font-weight: 700;
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+    filter: brightness(1.06);
+    color: #15191d;
+}
+
+/* Shared settings/config cards get the panel treatment on every page */
+.settings-container {
+    border: 1px solid var(--cwa-line);
+    border-radius: var(--cwa-radius);
+    background: linear-gradient(145deg, rgba(255, 255, 255, .025), transparent 38%), var(--cwa-panel);
+}
+
 /* Truncates a books description if if spans more than 8 lines */
 dd.meta_description {
     display: -webkit-box;

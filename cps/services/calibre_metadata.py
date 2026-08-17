@@ -290,13 +290,20 @@ class CalibreMetadataService:
                 "at least one title, author, ISBN, or identifier is required"
             )
 
+        # fetch-ebook-metadata needs its own per-source timeout PLUS time to start
+        # Calibre and download the cover. If the inner --timeout equals the outer
+        # wall-clock wait, the wrapper kills the process exactly when Calibre would
+        # be finishing, so it never returns results. Give Calibre a shorter inner
+        # timeout and reserve headroom for the outer wait.
+        inner_timeout = max(1, math.ceil(timeout) - 5)
+
         with tempfile.TemporaryDirectory(prefix="cwa-calibre-metadata-") as temp_dir:
             cover_path = Path(temp_dir, "cover")
             command = [
                 self.executable,
                 "--opf",
                 "--timeout",
-                str(max(1, math.ceil(timeout))),
+                str(inner_timeout),
             ]
             if title:
                 command.extend(("--title", title))

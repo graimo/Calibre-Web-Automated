@@ -27,7 +27,10 @@ class Calibre(Metadata):
 
     DESCRIPTION = "Calibre metadata sources"
     META_URL = "https://calibre-ebook.com/"
-    FETCH_TIMEOUT = 14.0
+    # Outer wall-clock budget for the whole fetch-ebook-metadata run. Must leave
+    # room above Calibre's inner per-source timeout (see CalibreMetadataService.fetch,
+    # which reserves ~5s of headroom) for Calibre startup and cover download.
+    FETCH_TIMEOUT = 30.0
 
     def __init__(self) -> None:
         super().__init__()
