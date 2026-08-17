@@ -70,7 +70,6 @@ CREATE TABLE IF NOT EXISTS cwa_settings(
     auto_metadata_update_identifiers SMALLINT DEFAULT 1 NOT NULL,
     auto_metadata_update_cover SMALLINT DEFAULT 1 NOT NULL,
     cover_download_max_mb INTEGER DEFAULT 15 NOT NULL,
-    calibre_metadata_timeout INTEGER DEFAULT 60 NOT NULL,
     google_books_api_key TEXT DEFAULT '' NOT NULL,
     metadata_provider_hierarchy TEXT DEFAULT '["ibdb","google","dnb"]' NOT NULL,
     metadata_providers_enabled TEXT DEFAULT '{}' NOT NULL,
