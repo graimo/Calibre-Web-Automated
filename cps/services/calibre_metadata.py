@@ -310,6 +310,36 @@ class CalibreMetadataService:
         self.max_output_bytes = max_output_bytes
         self.max_cover_bytes = max_cover_bytes
 
+    def _scraper_env(self):
+        """Environment for the Calibre subprocess so its QtWebEngine/Chromium
+        metadata scraper can start. Without a writable HOME/cache it crashes with
+        'Failed to create /root/.pki/nssdb' / 'No writable cache directories',
+        returns no data, and every source hangs until the timeout. Also runs Qt
+        headless and disables the Chromium sandbox (required inside containers)."""
+        base = os.environ.get("CALIBRE_DBPATH") or "/config"
+        home = os.path.join(base, ".cwa_calibre_scraper")
+        cache = os.path.join(home, "cache")
+        config = os.path.join(home, "config")
+        data = os.path.join(home, "data")
+        runtime = os.path.join(home, "runtime")
+        try:
+            for path in (home, cache, config, data, runtime):
+                os.makedirs(path, exist_ok=True)
+            os.chmod(runtime, 0o700)
+        except OSError:
+            pass
+        env = dict(os.environ)
+        env["HOME"] = home
+        env["XDG_CACHE_HOME"] = cache
+        env["XDG_CONFIG_HOME"] = config
+        env["XDG_DATA_HOME"] = data
+        env["XDG_RUNTIME_DIR"] = runtime
+        env.setdefault("FONTCONFIG_PATH", "/etc/fonts")
+        env["QT_QPA_PLATFORM"] = "offscreen"
+        env["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+        env["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox --disable-gpu --disable-dev-shm-usage"
+        return env
+
     def _run_capture(self, command, timeout, env=None):
         """Run a command with a wall-clock timeout, capturing stdout and a
         bounded stderr tail. Returns (returncode, stdout_bytes, stderr_snippet,
@@ -424,7 +454,7 @@ class CalibreMetadataService:
         except (TypeError, ValueError):
             max_results = 8
 
-        env = dict(os.environ)
+        env = self._scraper_env()
         env["CWA_ID_TITLE"] = title or ""
         env["CWA_ID_AUTHORS"] = "\n".join(author_list)
         env["CWA_ID_ISBN"] = isbn or ""
@@ -529,6 +559,7 @@ class CalibreMetadataService:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     start_new_session=os.name == "posix",
+                    env=self._scraper_env(),
                 )
             except FileNotFoundError as error:
                 raise CalibreMetadataExecutableNotFound(
