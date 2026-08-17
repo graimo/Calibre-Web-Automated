@@ -36,6 +36,20 @@ class Calibre(Metadata):
         super().__init__()
         self._service = CalibreMetadataService()
 
+    def _get_timeout(self) -> float:
+        """Read the timeout (seconds) from CWA settings, falling back to the
+        FETCH_TIMEOUT default. Configurable so it can be tuned without a rebuild."""
+        try:
+            import sys
+            sys.path.insert(1, "/app/calibre-web-automated/scripts/")
+            from cwa_db import CWA_DB
+            value = int(CWA_DB().cwa_settings.get("calibre_metadata_timeout"))
+            if value > 0:
+                return float(min(max(value, 10), 300))
+        except Exception:
+            pass
+        return self.FETCH_TIMEOUT
+
     def search(
         self, query: str, generic_cover: str = "", locale: str = "en"
     ) -> Optional[list[MetaRecord]]:
@@ -45,6 +59,7 @@ class Calibre(Metadata):
         if not self.active or not query:
             return []
 
+        timeout = self._get_timeout()
         if not _CALIBRE_SEARCH_SLOTS.acquire(blocking=False):
             log.warning("Calibre metadata search skipped because the concurrency limit is busy")
             return []
@@ -54,7 +69,7 @@ class Calibre(Metadata):
                 # like the Calibre desktop "Download metadata" dialog.
                 candidates = self._service.fetch_candidates(
                     title=query,
-                    timeout=self.FETCH_TIMEOUT,
+                    timeout=timeout,
                     max_results=8,
                 )
             except CalibreMetadataError as error:
@@ -63,7 +78,7 @@ class Calibre(Metadata):
                 try:
                     result = self._service.fetch(
                         title=query,
-                        timeout=self.FETCH_TIMEOUT,
+                        timeout=timeout,
                         fetch_cover=True,
                     )
                 except CalibreMetadataError as fallback_error:
