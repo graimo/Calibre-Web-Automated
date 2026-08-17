@@ -419,6 +419,16 @@
         {{_("Aggressive mode applies more invasive fixes and will attempt lower-confidence encoding conversions. Safe mode is recommended for most libraries.")}}
       </p>
 
+      {% if cwa_settings.get('auto_generate_toc') %}
+      <input type="checkbox" id="auto_generate_toc" name="auto_generate_toc" value="True" checked style="accent-color: var(--color-secondary);" data-toggle="tooltip" data-placement="right" title="Native TOC generation (no Calibre); does NOT require restart">
+      {% else %}
+      <input type="checkbox" id="auto_generate_toc" name="auto_generate_toc" value="True" style="accent-color: var(--color-secondary);" data-toggle="tooltip" data-placement="right" title="Native TOC generation (no Calibre); does NOT require restart">
+      {% endif %}
+      <label for="auto_generate_toc" style="padding-left: 10px;">{{_('Generate chapter TOC for EPUBs without one')}}</label><br>
+      <p class="cwa-settings-tooltip">
+        {{_("On ingest, EPUBs (and KEPUBs) that have no usable table of contents get one generated natively (a chapter per section, built from headings) so readers can show chapter navigation and time-left-in-chapter. Only runs when a TOC is missing; content files are not modified. Kindle formats inherit it when generated before conversion.")}}
+      </p>
+
       {% if cwa_settings['archived_cleanup_enabled'] %}
       <input type="checkbox" id="archived_cleanup_enabled" name="archived_cleanup_enabled" value="True" checked style="accent-color: var(--color-secondary);" data-toggle="tooltip" data-placement="right" title="Runs daily by default">
       {% else %}

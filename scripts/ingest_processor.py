@@ -900,6 +900,18 @@ class NewBookProcessor:
             self.backup(self.filepath, backup_type="failed")
             return
 
+        # Opt-in: generate a chapter TOC for EPUBs that lack one (native, no Calibre).
+        # generate_toc() is a no-op when a usable TOC already exists.
+        if self.cwa_settings.get('auto_generate_toc') and \
+                str(staged_path).lower().endswith((".epub", ".kepub")):
+            try:
+                sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+                from cps.epub_toc import generate_toc
+                if generate_toc(str(staged_path)):
+                    print(f"[ingest-processor]: Generated missing chapter TOC for {staged_path.name}", flush=True)
+            except Exception as e:
+                print(f"[ingest-processor] WARN: TOC generation failed for {staged_path.name}: {e}", flush=True)
+
         try:
             if text:
                 result = subprocess.run([
