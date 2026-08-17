@@ -150,8 +150,22 @@ def has_valid_toc(epub_path, min_entries=2):
 # --------------------------------------------------------------------------
 import html
 import os
+import re
 
 OPF_NS = "http://www.idpf.org/2007/opf"
+
+# Titles that are actually source file paths/names (converter artefacts) or file
+# extensions are rejected so they don't end up as TOC entries.
+_JUNK_TITLE_RE = re.compile(r"\.(pdf|epub|mobi|azw3?|kepub|txt|html?)\b", re.IGNORECASE)
+
+
+def _clean_title(text):
+    if not text:
+        return None
+    text = text.strip()
+    if not text or "/" in text or "\\" in text or _JUNK_TITLE_RE.search(text):
+        return None
+    return text
 
 _NAV_TEMPLATE = (
     '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -266,7 +280,8 @@ def generate_toc(epub_path, min_entries=2):
             entries = []  # (title, href-relative-to-opf-dir)
             for href in _spine_doc_hrefs(opf_root, manifest):
                 full = _resolve(opf_dir, href)
-                title = (_first_heading_text(zf, full) if full else None) \
+                raw = _first_heading_text(zf, full) if full else None
+                title = _clean_title(raw) \
                     or posixpath.splitext(posixpath.basename(href or "section"))[0]
                 entries.append((title, href))
 
