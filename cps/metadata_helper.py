@@ -9,11 +9,50 @@ import json
 
 from cps import constants, logger, db, helper
 from cps.search_metadata import cl as metadata_providers
+from cps.services.Metadata import Metadata
 import sys
 sys.path.insert(1, '/app/calibre-web-automated/scripts/')
 from cwa_db import CWA_DB
 
 log = logger.create()
+
+# Auto-metadata result selection thresholds (0..1). A candidate must clear
+# MIN_CONFIDENCE to be applied; reaching HIGH_CONFIDENCE stops querying more
+# providers. This replaces "take the first provider's first result" with a
+# scored choice that also prefers results carrying a cover and a description.
+MIN_CONFIDENCE = 0.45
+HIGH_CONFIDENCE = 0.85
+
+
+def _token_set(text):
+    return {t.lower() for t in Metadata.get_title_tokens(text or "", strip_joiners=True)}
+
+
+def _overlap(a_tokens, b_tokens):
+    if not a_tokens or not b_tokens:
+        return 0.0
+    return len(a_tokens & b_tokens) / max(len(a_tokens), len(b_tokens))
+
+
+def _score_candidate(metadata, query_title, query_authors):
+    """Score a metadata candidate against the ingested book (0..1)."""
+    title_score = _overlap(_token_set(metadata.title), _token_set(query_title))
+
+    author_tokens = set()
+    for name in (query_authors or []):
+        author_tokens |= _token_set(name)
+    cand_author_tokens = set()
+    for name in (getattr(metadata, "authors", None) or []):
+        cand_author_tokens |= _token_set(name)
+    author_score = _overlap(cand_author_tokens, author_tokens) if author_tokens else 0.0
+
+    score = 0.6 * title_score + 0.25 * author_score
+    # Tie-breakers: prefer candidates that actually carry a cover / description.
+    if metadata.cover and str(metadata.cover).startswith("http"):
+        score += 0.10
+    if getattr(metadata, "description", None) and metadata.description.strip():
+        score += 0.05
+    return min(score, 1.0)
 
 def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
     """
@@ -65,8 +104,14 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
             cwa_settings.get('metadata_providers_enabled', '{}')
         )
             
-        # Try each provider in order
-        metadata_found = False
+        # Query providers in hierarchy order and keep the best-scoring candidate
+        # (title/author match, preferring results that carry a cover + description).
+        query_title = book.title or ""
+        query_authors = [author.name for author in book.authors] if book.authors else []
+
+        best_metadata = None
+        best_score = 0.0
+        best_provider = None
         for provider_id in provider_hierarchy:
             # Respect each provider's centralized safe default.
             is_enabled = enabled_map.get(
@@ -76,37 +121,41 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
             if not is_enabled:
                 log.debug(f"Provider {provider_id} is globally disabled")
                 continue
+            provider = next(
+                (p for p in metadata_providers if p.__id__ == provider_id), None
+            )
+            if not provider or not provider.active:
+                continue
             try:
-                # Find the provider
-                provider = None
-                for p in metadata_providers:
-                    if p.__id__ == provider_id:
-                        provider = p
-                        break
-                        
-                if not provider or not provider.active:
-                    continue
-                    
                 log.debug(f"Trying metadata provider: {provider.__name__}")
-                
-                # Search for metadata
-                results = provider.search(search_query, "", "en")
-                if not results or len(results) == 0:
-                    continue
-                    
-                # Use the first result
-                metadata = results[0]
-                
-                # Apply metadata to book
-                if _apply_metadata_to_book(book, metadata, calibre_db_instance):
-                    log.info(f"Successfully applied metadata from {provider.__name__} for book: {book.title}")
-                    metadata_found = True
-                    break
-                    
+                results = provider.search(search_query, "", "en") or []
             except Exception as e:
                 log.warning(f"Error fetching metadata from provider {provider_id}: {e}")
                 continue
-                
+
+            for candidate in results:
+                score = _score_candidate(candidate, query_title, query_authors)
+                candidate.confidence_score = score
+                if score > best_score:
+                    best_score, best_metadata, best_provider = score, candidate, provider
+
+            if best_score >= HIGH_CONFIDENCE:
+                break  # already a strong match; no need to query more providers
+
+        metadata_found = False
+        if best_metadata is not None and best_score >= MIN_CONFIDENCE:
+            if _apply_metadata_to_book(book, best_metadata, calibre_db_instance):
+                log.info(
+                    "Applied metadata from %s (score %.2f) for book: %s",
+                    best_provider.__name__, best_score, book.title,
+                )
+                metadata_found = True
+        else:
+            log.info(
+                "No confident metadata match for '%s' (best score %.2f < %.2f); leaving as-is",
+                book.title, best_score, MIN_CONFIDENCE,
+            )
+
         calibre_db_instance.session.close()
         return metadata_found
         
