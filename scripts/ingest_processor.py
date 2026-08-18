@@ -1275,6 +1275,12 @@ class NewBookProcessor:
             # Import the centralized partial MD5 calculation function
             sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
             from cps.progress_syncing.checksums import calculate_koreader_partial_md5, store_checksum, CHECKSUM_VERSION
+            from cps.progress_syncing.settings import is_koreader_sync_enabled
+
+            # The book_format_checksums table only exists when KOReader sync is
+            # enabled; skip generation otherwise (avoids "no such table" on import).
+            if not is_koreader_sync_enabled():
+                return
 
             calibre_db_path = os.path.join(self.library_dir, 'metadata.db')
 
