@@ -234,7 +234,13 @@ def _book_uid(opf_root):
     return "cwa-toc"
 
 
-def _augment_opf(opf_root, nav_href, nav_id, ncx_href, ncx_id):
+def _wire_toc(opf_root):
+    """Ensure the OPF references exactly one nav (EPUB3) and one NCX (EPUB2),
+    REUSING any existing ones (their files are overwritten by the caller) instead
+    of adding duplicates. A second nav item would make readers pick the wrong
+    (often near-empty) one. Returns (opf_bytes, nav_href, ncx_href) with hrefs
+    relative to the OPF directory, or None on failure.
+    """
     ns = opf_root.tag.split("}", 1)[0][1:] if opf_root.tag.startswith("{") else None
     qn = (lambda name: "{%s}%s" % (ns, name)) if ns else (lambda name: name)
 
@@ -243,19 +249,48 @@ def _augment_opf(opf_root, nav_href, nav_id, ncx_href, ncx_id):
     if manifest is None or spine is None:
         return None
 
-    nav_item = etree.SubElement(manifest, qn("item"))
-    nav_item.set("id", nav_id)
-    nav_item.set("href", nav_href)
-    nav_item.set("media-type", "application/xhtml+xml")
-    nav_item.set("properties", "nav")
+    items = [e for e in manifest if _local(e.tag) == "item"]
 
-    ncx_item = etree.SubElement(manifest, qn("item"))
-    ncx_item.set("id", ncx_id)
-    ncx_item.set("href", ncx_href)
-    ncx_item.set("media-type", NCX_MEDIA_TYPE)
+    # Reuse an existing nav document; drop the "nav" property from any extras so
+    # only one remains authoritative. Otherwise create a fresh nav item.
+    nav_items = [e for e in items if "nav" in (e.get("properties") or "").split()]
+    if nav_items:
+        nav_href = nav_items[0].get("href")
+        for extra in nav_items[1:]:
+            props = [p for p in (extra.get("properties") or "").split() if p != "nav"]
+            if props:
+                extra.set("properties", " ".join(props))
+            elif "properties" in extra.attrib:
+                del extra.attrib["properties"]
+    else:
+        nav_href = "cwa_nav.xhtml"
+        item = etree.SubElement(manifest, qn("item"))
+        item.set("id", "cwa-nav")
+        item.set("href", nav_href)
+        item.set("media-type", "application/xhtml+xml")
+        item.set("properties", "nav")
 
-    spine.set("toc", ncx_id)
-    return etree.tostring(opf_root, xml_declaration=True, encoding="utf-8")
+    # Reuse an existing NCX (spine @toc first, then any ncx media type); else create.
+    items_by_id = {e.get("id"): e for e in items}
+    ncx_href = None
+    toc_id = spine.get("toc")
+    if toc_id and toc_id in items_by_id:
+        ncx_href = items_by_id[toc_id].get("href")
+    if ncx_href is None:
+        for e in items:
+            if (e.get("media-type") or "").strip().lower() == NCX_MEDIA_TYPE:
+                ncx_href = e.get("href")
+                spine.set("toc", e.get("id"))
+                break
+    if ncx_href is None:
+        ncx_href = "cwa_toc.ncx"
+        item = etree.SubElement(manifest, qn("item"))
+        item.set("id", "cwa-ncx")
+        item.set("href", ncx_href)
+        item.set("media-type", NCX_MEDIA_TYPE)
+        spine.set("toc", "cwa-ncx")
+
+    return etree.tostring(opf_root, xml_declaration=True, encoding="utf-8"), nav_href, ncx_href
 
 
 def generate_toc(epub_path, min_entries=2):
@@ -305,12 +340,14 @@ def generate_toc(epub_path, min_entries=2):
         nav_doc = _NAV_TEMPLATE.format(items=nav_items).encode("utf-8")
         ncx_doc = _NCX_TEMPLATE.format(uid=html.escape(uid, quote=True), points=points).encode("utf-8")
 
-        new_opf = _augment_opf(opf_root, "cwa_nav.xhtml", "cwa-nav", "cwa_toc.ncx", "cwa-ncx")
-        if not new_opf:
+        wired = _wire_toc(opf_root)
+        if not wired:
             return False
+        new_opf, nav_href, ncx_href = wired
 
-        nav_name = posixpath.join(opf_dir, "cwa_nav.xhtml") if opf_dir else "cwa_nav.xhtml"
-        ncx_name = posixpath.join(opf_dir, "cwa_toc.ncx") if opf_dir else "cwa_toc.ncx"
+        # Overwrite the (existing or newly declared) nav/ncx files in place.
+        nav_name = _resolve(opf_dir, nav_href) or "cwa_nav.xhtml"
+        ncx_name = _resolve(opf_dir, ncx_href) or "cwa_toc.ncx"
         contents[opf_path] = new_opf
         contents[nav_name] = nav_doc
         contents[ncx_name] = ncx_doc
