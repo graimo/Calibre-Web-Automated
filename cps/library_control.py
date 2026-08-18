@@ -322,6 +322,24 @@ def ensure_user_ingest_dir(user):
         return None
 
 
+def reconcile_user_ingest_dirs(app_session=None):
+    """Ensure an ingest subfolder exists for every user with an active personal
+    library. Runs at startup so the dropzones are present immediately, even for
+    users provisioned before this feature and regardless of who is logged in."""
+    session = app_session or ub.session
+    try:
+        rows = (
+            session.query(ub.Library, ub.User)
+            .join(ub.User, ub.User.id == ub.Library.owner_user_id)
+            .filter(ub.Library.kind == "personal", ub.Library.status == "active")
+            .all()
+        )
+        for _library, user in rows:
+            ensure_user_ingest_dir(user)
+    except Exception as error:  # pragma: no cover - best effort
+        log.warning("reconcile_user_ingest_dirs failed: %s", error)
+
+
 def resolve_ingest_target(username, app_session=None):
     """Resolve a username to its default library's (root_path, metadata_db).
 
@@ -734,6 +752,10 @@ def init_app(app, app_session, config):
         getattr(config, "config_calibre_uuid", None),
     )
     queue_personal_library_provisioning()
+
+    # Ensure existing users' ingest dropzones exist right away (synchronous),
+    # not only after the async provisioning task runs.
+    reconcile_user_ingest_dirs(app_session)
 
     @app.before_request
     def _queue_missing_current_user_personal_library():
