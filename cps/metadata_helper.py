@@ -305,19 +305,32 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
             except Exception as e:
                 log.warning(f"Error parsing published date: {e}")
                 
-        # Update rating if available and enabled in settings
-        if (cwa_settings.get('auto_metadata_update_rating', True) and 
+        # Update rating if available and enabled in settings.
+        # 'ratings' is a SHARED, UNIQUE-valued lookup table (like tags/authors):
+        #  - reuse the existing row for a value instead of inserting a duplicate
+        #    (a blind INSERT raised "UNIQUE constraint failed: ratings.rating");
+        #  - never mutate an existing row's value (that would re-rate every book
+        #    linked to it) — re-point the book's link instead.
+        if (cwa_settings.get('auto_metadata_update_rating', True) and
             hasattr(metadata, 'rating') and metadata.rating):
             try:
                 rating_value = float(metadata.rating)
-                if 0 <= rating_value <= 10:  # Calibre uses 0-10 scale
+                # Providers report a 0-5 score; Calibre stores it on a 0-10 scale.
+                rating_int = max(0, min(10, int(round(rating_value * 2))))
+                if rating_int <= 0:
                     if book.ratings:
-                        book.ratings[0].rating = int(rating_value * 2)  # Convert to Calibre's 0-10 scale
-                    else:
-                        rating = db.Ratings(rating=int(rating_value * 2))
-                        calibre_db_instance.session.add(rating)
-                        book.ratings = [rating]
-                    updated = True
+                        book.ratings = []
+                        updated = True
+                else:
+                    existing_rating = (calibre_db_instance.session.query(db.Ratings)
+                                       .filter(db.Ratings.rating == rating_int)
+                                       .first())
+                    if existing_rating is None:
+                        existing_rating = db.Ratings(rating=rating_int)
+                        calibre_db_instance.session.add(existing_rating)
+                    if not book.ratings or book.ratings[0].rating != rating_int:
+                        book.ratings = [existing_rating]
+                        updated = True
             except (ValueError, TypeError):
                 pass
                 

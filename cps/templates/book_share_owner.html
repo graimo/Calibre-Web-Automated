@@ -8,6 +8,7 @@
   </p>
 
   <form role="form" method="POST" action="{{ url_for('edit-book.share_book_owners', book_id=book.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       {% for user in users %}
       {% set is_self = (user.id == current_user_id) %}
