@@ -2987,6 +2987,24 @@ def show_book(book_id):
         cwa_db = CWA_DB()
         cwa_settings = cwa_db.cwa_settings
 
+        # Approach B: may the current user manage this book's owners (share it)?
+        # Admins can always assign owners once the #owner column exists (so they can
+        # seed ownership on the back-catalogue before turning isolation on). A normal
+        # user can only manage sharing of a book they own, and only once isolation is
+        # engaged.
+        can_share_book = False
+        try:
+            from . import owner_library
+            if current_user.is_authenticated and not current_user.is_anonymous \
+                    and owner_library.get_owner_column() is not None:
+                if current_user.role_admin():
+                    can_share_book = True
+                elif owner_library.is_isolation_active(config) \
+                        and int(current_user.id) in owner_library.get_book_owner_ids(entry):
+                    can_share_book = True
+        except Exception as e:
+            log.debug("owner share-eligibility check failed for book %s: %s", book_id, e)
+
         return render_title_template('detail.html',
                                      entry=entry,
                                      cc=cc,
@@ -2996,6 +3014,7 @@ def show_book(book_id):
                                      cwa_settings=cwa_settings,
                                      kosync_progress=kosync_progress,
                                      kosync_progress_timestamp=kosync_progress_timestamp,
+                                     can_share_book=can_share_book,
                                      page="book")
     else:
         log.debug("Selected book is unavailable. File does not exist or is not accessible")

@@ -2660,6 +2660,20 @@ def _handle_new_user(to_save, content, languages, translations, kobo_support):
         content.kobo_only_shelves_sync = to_save.get("kobo_only_shelves_sync", 0) == "on"
         ub.session.add(content)
         ub.session.commit()
+        # Approach B (per-user ownership): give the new user the correct visibility
+        # restriction (their own id when isolation is on; empty for admins so they
+        # see everything) and create their dedicated ingest dropzone. This is
+        # decoupled from physical multi-library provisioning.
+        try:
+            from . import owner_library, library_control
+            isolation_active = owner_library.is_isolation_active(config)
+            desired = owner_library.allowed_value_for_user(content, isolation_active)
+            if (content.allowed_column_value or "") != desired:
+                content.allowed_column_value = desired
+                ub.session.commit()
+            library_control.ensure_user_ingest_dir(content)
+        except Exception as error:
+            log.error("Post-create owner/ingest setup failed for user %s: %s", content.name, error)
         if constants.MULTI_LIBRARY_ENABLED:
             try:
                 from . import library_control
@@ -2826,6 +2840,19 @@ def _delete_user(content):
         raise
 
     log.info("User %s deleted", user_name)
+    # Approach B cleanup (best-effort, outside the app.db transaction): drop this
+    # user's ownership from every book (ownerless books survive, admin-only) and
+    # remove their now-unused ingest dropzone.
+    try:
+        from . import owner_library
+        owner_library.purge_user_from_all_books(user_id)
+    except Exception as error:
+        log.warning("Could not purge ownership for deleted user %s: %s", user_name, error)
+    try:
+        from . import library_control
+        library_control.remove_user_ingest_dir(user_name)
+    except Exception as error:
+        log.warning("Could not remove ingest dir for deleted user %s: %s", user_name, error)
     if deletion_state and deletion_state.get("cleanup_error") is not None:
         log.error(
             "User %s deleted but personal-library cleanup remains pending at %s",

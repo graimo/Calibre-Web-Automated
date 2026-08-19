@@ -640,6 +640,61 @@ class NewBookProcessor:
         except Exception as e:
             print(f"[ingest-processor] WARN: Failed to infer book ID after import: {e}", flush=True)
 
+    def _resolve_ingest_owner_id(self) -> int | None:
+        """Resolve the owning user id from the per-user ingest subfolder.
+
+        A book dropped in <ingest_folder>/<username>/... is owned by <username>.
+        Returns the ub.User.id (int) or None when there is no user subfolder or the
+        name doesn't match a user (the book is then left un-owned)."""
+        try:
+            rel = os.path.relpath(os.path.normpath(self.filepath), self.ingest_folder)
+        except ValueError:
+            return None
+        if rel.startswith(".."):
+            return None
+        parts = rel.split(os.sep)
+        if len(parts) < 2:
+            return None  # file was directly in the ingest root, no owner subfolder
+        username = parts[0].strip()
+        if not username or username in (".", ".."):
+            return None
+        try:
+            with sqlite3.connect(get_app_db_path(), timeout=30) as con:
+                row = con.execute("SELECT id FROM user WHERE name = ?", (username,)).fetchone()
+                if row:
+                    return int(row[0])
+                print(f"[ingest-processor] INFO: ingest subfolder '{username}' matches no user; leaving book un-owned.", flush=True)
+                return None
+        except Exception as e:
+            print(f"[ingest-processor] WARN: Could not resolve owner for subfolder '{username}': {e}", flush=True)
+            return None
+
+    def _set_book_owner(self, book_id: int, owner_user_id: int) -> None:
+        """Tag a freshly-imported book with its owner in the #owner custom column.
+
+        Writes directly into metadata.db (multi-value text custom column 'owner'),
+        mirroring how the edit-book UI links a multi-value value. No-op if the
+        column doesn't exist yet (created at boot by auto_library.ensure_owner_column)."""
+        try:
+            with sqlite3.connect(self.metadata_db, timeout=30) as con:
+                cur = con.cursor()
+                row = cur.execute("SELECT id FROM custom_columns WHERE label='owner'").fetchone()
+                if not row:
+                    print("[ingest-processor] INFO: #owner column not present; skipping ownership tag.", flush=True)
+                    return
+                n = row[0]
+                val = str(owner_user_id)
+                cur.execute(f"INSERT OR IGNORE INTO custom_column_{n} (value) VALUES (?)", (val,))
+                vid = cur.execute(f"SELECT id FROM custom_column_{n} WHERE value=?", (val,)).fetchone()[0]
+                cur.execute(
+                    f"INSERT OR IGNORE INTO books_custom_column_{n}_link (book, value) VALUES (?, ?)",
+                    (book_id, vid),
+                )
+                con.commit()
+                print(f"[ingest-processor] INFO: Set owner (user id={owner_user_id}) for book id={book_id}.", flush=True)
+        except Exception as e:
+            print(f"[ingest-processor] WARN: Could not set #owner for book id={book_id}: {e}", flush=True)
+
     def _register_title_sort_function(self, connection: sqlite3.Connection) -> bool:
         """Register title_sort SQL function on a raw SQLite connection."""
         try:
@@ -971,6 +1026,15 @@ class NewBookProcessor:
                 else:
                     self._fallback_last_added_book_id()
             print(f"[ingest-processor] Added {staged_path.stem} to Calibre database", flush=True)
+
+            # Tag the book with its owner (from the per-user ingest subfolder) so
+            # per-user ownership isolation (approach B) can route visibility. Runs
+            # regardless of whether isolation is currently enabled, so ownership data
+            # accumulates and the admin can turn isolation on later.
+            if self.last_added_book_id is not None:
+                owner_user_id = self._resolve_ingest_owner_id()
+                if owner_user_id is not None:
+                    self._set_book_owner(self.last_added_book_id, owner_user_id)
 
             if self.cwa_settings['auto_backup_imports']:
                 self.backup(str(staged_path), backup_type="imported")

@@ -351,6 +351,27 @@ def ensure_user_ingest_dir(user):
         return None
 
 
+def remove_user_ingest_dir(username):
+    """Remove a user's ingest subfolder when their account is deleted.
+
+    Only removes it if empty, so a book left mid-ingest is never destroyed.
+    Best-effort. Returns True if the directory was removed."""
+    ingest_root = _ingest_root()
+    safe = _safe_username_dir(username)
+    if not ingest_root or not safe:
+        return False
+    path = os.path.join(ingest_root, safe)
+    try:
+        if os.path.isdir(path) and not os.listdir(path):
+            os.rmdir(path)
+            return True
+        if os.path.isdir(path):
+            log.info("Kept non-empty ingest dir for deleted user %r: %s", username, path)
+    except OSError as error:
+        log.warning("Could not remove per-user ingest dir %s: %s", path, error)
+    return False
+
+
 def reconcile_user_ingest_dirs(app_session=None):
     """Ensure an ingest subfolder exists for every user with an active personal
     library. Runs at startup so the dropzones are present immediately, even for

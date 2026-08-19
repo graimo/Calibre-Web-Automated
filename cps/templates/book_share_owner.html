@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+{% block body %}
+<div class="col-sm-8 col-offset-2" style="margin: 1.5rem auto; max-width: 640px;">
+  <h2 style="margin-bottom: .3rem;">{{ _('Share book') }}</h2>
+  <p style="opacity: .8; margin-bottom: 1.2rem;">
+    {{ _('Choose which users can see and read') }} <strong>{{ book.title }}</strong>.
+    {{ _('Each owner keeps their own reading progress, bookmarks and shelves.') }}
+  </p>
+
+  <form role="form" method="POST" action="{{ url_for('edit-book.share_book_owners', book_id=book.id) }}">
+    <div class="form-group">
+      {% for user in users %}
+      {% set is_self = (user.id == current_user_id) %}
+      {% set is_owner = (user.id in current_owner_ids) %}
+      <div class="checkbox" style="padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.06);">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="checkbox" name="owner_ids" value="{{ user.id }}"
+                 style="accent-color: var(--color-secondary);"
+                 {% if is_owner %}checked{% endif %}
+                 {% if is_self and not is_owner_admin %}checked disabled{% endif %}>
+          <span>{{ user.name }}</span>
+          {% if is_self %}<em style="opacity:.6;">({{ _('you') }})</em>{% endif %}
+          {% if user.role_admin() %}<em style="opacity:.6;">({{ _('admin') }})</em>{% endif %}
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if not is_owner_admin %}
+    <p style="opacity:.7; font-size:.9em;">
+      {{ _('You cannot remove yourself here. To give up a shared book, delete it — the book stays for the remaining owners.') }}
+    </p>
+    {% endif %}
+
+    <div style="margin-top: 1.2rem; display: flex; gap: 10px;">
+      <button type="submit" class="btn btn-primary">{{ _('Save sharing') }}</button>
+      <a href="{{ url_for('web.show_book', book_id=book.id) }}" class="btn btn-default">{{ _('Cancel') }}</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

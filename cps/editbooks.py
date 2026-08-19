@@ -90,6 +90,58 @@ def edit_book(book_id):
     return do_edit_book(book_id)
 
 
+@editbook.route("/book/share/<int:book_id>", methods=['GET', 'POST'])
+@user_login_required
+def share_book_owners(book_id):
+    """Manage the set of owners (co-readers) of a book (approach B).
+
+    An owner or an admin can add/remove other users as owners of the book. A
+    non-admin owner cannot drop themselves here (they'd lose access to their own
+    book); to relinquish a shared book they use delete, which is owner-aware."""
+    from . import owner_library
+    book = calibre_db.get_book(book_id)
+    if not book:
+        flash(_("Oops! Selected book is unavailable."), category="error")
+        return redirect(url_for("web.index"))
+    col = owner_library.get_owner_column()
+    if col is None:
+        flash(_("Ownership is not configured yet (the #owner column is missing). "
+                "Restart the container once so it can be created."), category="error")
+        return redirect(url_for("web.show_book", book_id=book_id))
+
+    current_owner_ids = owner_library.get_book_owner_ids(book, col)
+    is_owner_admin = bool(current_user.role_admin())
+    if not is_owner_admin and int(current_user.id) not in current_owner_ids:
+        abort(403)
+
+    valid_users = [u for u in ub.session.query(ub.User).order_by(ub.User.name).all()
+                   if not u.role_anonymous()]
+    valid_ids = {u.id for u in valid_users}
+
+    if request.method == 'POST':
+        selected = request.form.getlist("owner_ids")
+        selected_ids = [int(x) for x in selected if str(x).strip().isdigit()]
+        # A non-admin owner always remains an owner of their own book.
+        if not is_owner_admin and int(current_user.id) not in selected_ids:
+            selected_ids.append(int(current_user.id))
+        # De-duplicate and keep only real, non-anonymous users.
+        selected_ids = [uid for uid in dict.fromkeys(selected_ids) if uid in valid_ids]
+        owner_library.set_book_owners(book, selected_ids, col)
+        flash(_("Sharing updated for '%(title)s'", title=book.title), category="success")
+        return redirect(url_for("web.show_book", book_id=book_id))
+
+    return render_title_template(
+        'book_share_owner.html',
+        book=book,
+        users=valid_users,
+        current_owner_ids=current_owner_ids,
+        is_owner_admin=is_owner_admin,
+        current_user_id=int(current_user.id),
+        title=_("Share book"),
+        page="share_book",
+    )
+
+
 @editbook.route("/upload", methods=["POST"])
 @login_required_if_no_ano
 @upload_required
@@ -1362,6 +1414,24 @@ def delete_book_from_table(book_id, book_format, json_response, location=""):
     if current_user.role_delete_books():
         book = calibre_db.get_book(book_id)
         if book:
+            # Approach B: owner-aware delete. When per-user ownership isolation is
+            # engaged and this is a full delete, a non-admin who is one of several
+            # owners only relinquishes their own ownership — the physical book
+            # survives for the remaining owners. Their per-user state for the book is
+            # cleaned up. Sole owners (and admins) fall through to a real delete.
+            if not book_format:
+                try:
+                    from . import owner_library
+                    if owner_library.is_isolation_active(config) and not current_user.role_admin():
+                        owners = owner_library.get_book_owner_ids(book)
+                        if int(current_user.id) in owners and len(owners) > 1:
+                            owner_library.remove_book_owner(book, int(current_user.id))
+                            owner_library.cleanup_user_book_state(int(current_user.id), book_id)
+                            log.info("User %s relinquished ownership of book %s (%d owners remain)",
+                                     current_user.id, book_id, len(owners) - 1)
+                            return render_delete_book_result(book_format, json_response, warning, book_id, location)
+                except Exception as e:
+                    log.error("Owner-aware delete check failed for book %s: %s", book_id, e)
             try:
                 result, error = helper.delete_book(book, config.get_book_path(), book_format=book_format.upper())
                 if not result:

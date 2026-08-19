@@ -20,6 +20,7 @@ CWA is and always will be free and open source. If it makes your library life ea
 
 ## _Quick Access_
 
+- [**Fork customizations**](#fork-customizations) 🍴 — _what this fork changes vs. upstream CWA_
 - [Features](#features) 🪄
 - [Releases](https://github.com/crocodilestick/Calibre-Web-Automated/releases) 🆕
 - [Roadmap](#features-currently-under-active-development-and-on-our-roadmap-️️) 🛣️
@@ -35,6 +36,52 @@ CWA is and always will be free and open source. If it makes your library life ea
   - [OAuth Authentication Setup](#enhanced-oauth-20oidc-authentication-) 🔐
 - [For Developers](#for-developers---building-custom-docker-image) 🚀
 - [Further Development](#further-development-️) 🏗️
+
+## Fork Customizations
+
+> 🍴 **This is a personal fork of [Calibre-Web-Automated](https://github.com/crocodilestick/Calibre-Web-Automated)**, published as the Docker image `graimo/calibre-web-automated:synology` and tuned for a **multi-user Synology (x86_64)** deployment. Everything below is layered *on top of* upstream CWA; all original CWA features remain. This section documents only what differs from upstream.
+
+### 👥 Per-user book ownership (isolated libraries)
+
+A single physical Calibre library is shared by everyone, but each book records its **owners** so users only see their own books.
+
+- Ownership is stored as stable **user IDs** in a hidden, multi-value custom column `#owner`. A book can have **several owners** (sharing).
+- **Opt-in toggle** *"Per-user book ownership"* in **CWA Settings** (off by default). When on, each user sees only the books they own; **admins always see everything**. Turning it off restores the shared-library behaviour.
+- **Automatic assignment on ingest:** a book dropped in the per-user folder `/cwa-book-ingest/<username>/` is assigned to that user. Per-user drop folders are created automatically when a user is created and removed (if empty) when the account is deleted.
+- **Sharing:** an owner (or an admin) can share a book with other users via a **Share** button on the book page. Each owner keeps their **own** reading progress, bookmarks and shelves for the same book (all per-user state stays keyed on the book id in `app.db`).
+- **Owner-aware delete:** when a shared book is "deleted" by one of several owners, only that user's ownership (and their per-user state for it) is dropped — the file survives for the remaining owners. The book is physically removed only when the **last** owner deletes it.
+- Implemented additively: it reuses CWA's existing restricted-custom-column visibility filter, so no existing per-user feature is affected. The `#owner` column is created automatically at container start (no Calibre binaries required).
+
+### 🔎 Native, Calibre-free metadata fetching
+
+- Removed the Calibre-desktop-based metadata provider (it relied on QtWebEngine, which crashes on older kernels such as Synology's 4.4).
+- Added native **Google Books** (optional API key) and **Open Library** providers, with **confidence-scored best-match selection** (title/author/cover/description) so only a good match is applied.
+- The Google Books API key is configurable directly in **CWA Settings**.
+
+### 📖 Automatic chapter TOC generation
+
+- On ingest, EPUB/KEPUB files that lack a usable table of contents get one generated **natively** (a chapter per section, built from headings) so readers can show chapter navigation and time-left-in-chapter.
+- Only runs when a TOC is missing, never duplicates an existing one, and does not modify the content documents. Toggle in **CWA Settings**.
+
+### 📱 Per-user device profiles
+
+- Each user can select their device type(s) — **Kindle / Kobo / KOReader / generic** — and settings that don't apply to their devices are hidden, decluttering the UI.
+
+### 🎨 UI refresh
+
+- The redesigned dark theme is applied **across the whole app** (not only the CWA settings page), with an improved settings action bar.
+
+### 🐛 Bug fixes vs. upstream
+
+- Fixed `no such table: book_format_checksums` errors that occurred when KOReader sync was disabled (checksum writes are now gated behind the KOReader-sync setting).
+- Fixed metadata-fetch timeouts / empty results by replacing the unreliable Calibre provider (see above).
+- Fixed duplicate navigation entries so the CWA reader shows a proper chapter index.
+
+### 📦 Packaging
+
+- A GitHub Actions workflow builds and publishes the image to Docker Hub as `graimo/calibre-web-automated:synology` (plus `latest`) for `linux/amd64`, so it can be pulled directly from the Synology Container Manager GUI.
+
+---
 
 ## Why does it exist? 🔓
 

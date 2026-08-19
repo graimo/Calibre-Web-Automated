@@ -175,6 +175,15 @@ def create_app():
     init_calibre_db_from_config(config, cli_param.settings_path)
     calibre_db.init_db()
 
+    # Approach B: per-user ownership. Ensure every user has an ingest dropzone and,
+    # when isolation is engaged, that their allowed_column_value is consistent.
+    # Runs after calibre_db is connected so the #owner column can be resolved.
+    try:
+        from . import owner_library
+        owner_library.reconcile_at_startup(config)
+    except Exception as error:
+        log.debug("owner_library reconcile failed at startup: %s", error)
+
     updater_thread.init_updater(config, web_server)
     # Perform dry run of updater and exit afterward
     if cli_param.dry_run:

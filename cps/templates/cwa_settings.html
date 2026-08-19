@@ -429,6 +429,16 @@
         {{_("On ingest, EPUBs (and KEPUBs) that have no usable table of contents get one generated natively (a chapter per section, built from headings) so readers can show chapter navigation and time-left-in-chapter. Only runs when a TOC is missing; content files are not modified. Kindle formats inherit it when generated before conversion.")}}
       </p>
 
+      {% if cwa_settings.get('owner_isolation') %}
+      <input type="checkbox" id="owner_isolation" name="owner_isolation" value="True" checked style="accent-color: var(--color-secondary);" data-toggle="tooltip" data-placement="right" title="Restricts each user to the books they own; admins still see everything">
+      {% else %}
+      <input type="checkbox" id="owner_isolation" name="owner_isolation" value="True" style="accent-color: var(--color-secondary);" data-toggle="tooltip" data-placement="right" title="Restricts each user to the books they own; admins still see everything">
+      {% endif %}
+      <label for="owner_isolation" style="padding-left: 10px;">{{_('Per-user book ownership (isolate libraries)')}}</label><br>
+      <p class="cwa-settings-tooltip">
+        {{_("When enabled, each user only sees the books they own; admins keep seeing everything. Ownership is set automatically at ingest from the per-user drop folder (/cwa-book-ingest/<username>) and can be shared with other users. Books already in the library have no owner until you assign one, so they stay admin-only until then. Enable this only after you have assigned owners to your existing books, otherwise they disappear from non-admin users. Turning it off makes every book visible to everyone again.")}}
+      </p>
+
       {% if cwa_settings['archived_cleanup_enabled'] %}
       <input type="checkbox" id="archived_cleanup_enabled" name="archived_cleanup_enabled" value="True" checked style="accent-color: var(--color-secondary);" data-toggle="tooltip" data-placement="right" title="Runs daily by default">
       {% else %}

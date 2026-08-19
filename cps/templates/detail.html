@@ -565,6 +565,12 @@
                                             <span class="sr-only">{{ _('Delete Book') }}</span>
                                         </button>
                                     {% endif %}
+                                    {% if can_share_book %}
+                                        <a href="{{ url_for('edit-book.share_book_owners', book_id=entry.id) }}"
+                                           class="btn btn-primary action-icon-btn" role="button" title="{{ _('Share book') }}" aria-label="{{ _('Share book') }}">
+                                            <span class="glyphicon glyphicon-share"></span>
+                                        </a>
+                                    {% endif %}
                                     {% if current_user.is_authenticated and (current_user.shelf.all() or g.shelves_access) %}
                                         {% set shelf_state = namespace(has_available=false) %}
                                         {% for shelf in g.shelves_access %}

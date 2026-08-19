@@ -103,10 +103,151 @@ class AutoLibrary:
         if self.metadb_path is not None and os.path.exists(self.metadb_path):
             self.update_dirs_json()
             self.update_calibre_web_db()
+            self.ensure_owner_column()
             return
         else:
             print("[cwa-auto-library]: ERROR: metadata.db found but not mounted")
             sys.exit(1)
+
+    # Ensures the multi-value TEXT custom column '#owner' exists in metadata.db.
+    # This backs the per-user multi-owner visibility model (approach B): each book
+    # stores the integer user IDs (ub.User.id) of its owners, and cps.db.common_filters
+    # restricts a non-admin user to books whose #owner contains their id.
+    #
+    # Runs on every boot, BEFORE the web app opens its CalibreDB session, so the new
+    # column is picked up by cps.db.setup_db_cc_classes without a live reconnect.
+    # Idempotent (a no-op once the column exists) and best-effort (never blocks boot).
+    # Uses raw SQL matching Calibre's own DDL for a normalized multi-value text column,
+    # so it needs neither the Calibre binaries nor calibre-debug (which crashes on some
+    # older kernels).
+    def ensure_owner_column(self):
+        try:
+            con = sqlite3.connect(self.metadb_path, timeout=30)  # type: ignore
+        except Exception as e:
+            print(f"[cwa-auto-library] WARN: could not open metadata.db to ensure #owner column: {e}", flush=True)
+            return
+        try:
+            cur = con.cursor()
+            existing = cur.execute(
+                "SELECT id FROM custom_columns WHERE label = 'owner'"
+            ).fetchone()
+            if existing is not None:
+                n = existing[0]
+                table = cur.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+                    (f"custom_column_{n}",),
+                ).fetchone()
+                if table is not None:
+                    return  # fully present -> nothing to do
+                # Broken partial state (column row without its backing table): drop
+                # the orphaned row and recreate cleanly below.
+                print("[cwa-auto-library] WARN: #owner column row exists without its table; recreating.", flush=True)
+                cur.execute("DELETE FROM custom_columns WHERE id = ?", (n,))
+                con.commit()
+            cur.execute(
+                "INSERT INTO custom_columns "
+                "(label, name, datatype, mark_for_delete, editable, display, is_multiple, normalized) "
+                "VALUES ('owner', 'Owners', 'text', 0, 1, '{}', 1, 1)"
+            )
+            n = cur.lastrowid
+            con.commit()  # persist the column row before the (auto-committing) DDL
+            try:
+                cur.executescript(self._owner_column_ddl(n))
+                con.commit()
+            except Exception:
+                # Roll back to a clean slate so a later boot can retry rather than
+                # leaving a half-created column that would break the web app.
+                try:
+                    con.rollback()
+                    cur.executescript(
+                        f"DROP TABLE IF EXISTS books_custom_column_{n}_link;"
+                        f"DROP TABLE IF EXISTS custom_column_{n};"
+                        f"DROP VIEW IF EXISTS tag_browser_custom_column_{n};"
+                        f"DROP VIEW IF EXISTS tag_browser_filtered_custom_column_{n};"
+                    )
+                    cur.execute("DELETE FROM custom_columns WHERE id = ?", (n,))
+                    con.commit()
+                except Exception:
+                    pass
+                raise
+            print(f"[cwa-auto-library]: Created multi-value custom column #owner (id={n}) for per-user ownership.", flush=True)
+        except Exception as e:
+            print(f"[cwa-auto-library] WARN: could not create #owner custom column: {e}", flush=True)
+        finally:
+            con.close()
+
+    # DDL for a normalized (tags-like) multi-value text custom column, verbatim from
+    # Calibre's own output for `calibredb add_custom_column --is-multiple`. {n} is the
+    # new custom_columns.id. The 'OF author' trigger clause is a genuine Calibre artifact
+    # (the link table has no author column, so it never fires) kept for byte parity.
+    @staticmethod
+    def _owner_column_ddl(n: int) -> str:
+        return f"""
+CREATE TABLE custom_column_{n}(
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    value TEXT NOT NULL COLLATE NOCASE,
+    link  TEXT NOT NULL DEFAULT "",
+    UNIQUE(value));
+CREATE INDEX custom_column_{n}_idx ON custom_column_{n} (value COLLATE NOCASE);
+
+CREATE TABLE books_custom_column_{n}_link(
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    book  INTEGER NOT NULL,
+    value INTEGER NOT NULL,
+    UNIQUE(book, value));
+CREATE INDEX books_custom_column_{n}_link_aidx ON books_custom_column_{n}_link (value);
+CREATE INDEX books_custom_column_{n}_link_bidx ON books_custom_column_{n}_link (book);
+
+CREATE TRIGGER fkc_update_books_custom_column_{n}_link_a
+        BEFORE UPDATE OF book ON books_custom_column_{n}_link
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT id from books WHERE id=NEW.book) IS NULL
+                THEN RAISE(ABORT, 'Foreign key violation: book not in books')
+            END;
+        END;
+CREATE TRIGGER fkc_update_books_custom_column_{n}_link_b
+        BEFORE UPDATE OF author ON books_custom_column_{n}_link
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT id from custom_column_{n} WHERE id=NEW.value) IS NULL
+                THEN RAISE(ABORT, 'Foreign key violation: value not in custom_column_{n}')
+            END;
+        END;
+CREATE TRIGGER fkc_insert_books_custom_column_{n}_link
+        BEFORE INSERT ON books_custom_column_{n}_link
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT id from books WHERE id=NEW.book) IS NULL
+                THEN RAISE(ABORT, 'Foreign key violation: book not in books')
+                WHEN (SELECT id from custom_column_{n} WHERE id=NEW.value) IS NULL
+                THEN RAISE(ABORT, 'Foreign key violation: value not in custom_column_{n}')
+            END;
+        END;
+CREATE TRIGGER fkc_delete_books_custom_column_{n}_link
+        AFTER DELETE ON custom_column_{n}
+        BEGIN
+            DELETE FROM books_custom_column_{n}_link WHERE value=OLD.id;
+        END;
+
+CREATE VIEW tag_browser_custom_column_{n} AS SELECT
+    id, value,
+    (SELECT COUNT(id) FROM books_custom_column_{n}_link WHERE value=custom_column_{n}.id) count,
+    (SELECT AVG(r.rating) FROM books_custom_column_{n}_link, books_ratings_link as bl, ratings as r
+     WHERE books_custom_column_{n}_link.value=custom_column_{n}.id and bl.book=books_custom_column_{n}_link.book
+       and r.id = bl.rating and r.rating <> 0) avg_rating,
+    value AS sort
+    FROM custom_column_{n};
+CREATE VIEW tag_browser_filtered_custom_column_{n} AS SELECT
+    id, value,
+    (SELECT COUNT(books_custom_column_{n}_link.id) FROM books_custom_column_{n}_link
+       WHERE value=custom_column_{n}.id AND books_list_filter(book)) count,
+    (SELECT AVG(r.rating) FROM books_custom_column_{n}_link, books_ratings_link as bl, ratings as r
+     WHERE books_custom_column_{n}_link.value=custom_column_{n}.id AND bl.book=books_custom_column_{n}_link.book
+       AND r.id = bl.rating AND r.rating <> 0 AND books_list_filter(bl.book)) avg_rating,
+    value AS sort
+    FROM custom_column_{n};
+"""
 
     # Uses sql to update CW's app.db with the correct library location (config_calibre_dir in the settings table)
     def update_calibre_web_db(self):

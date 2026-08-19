@@ -714,6 +714,7 @@ def set_cwa_settings():
     cwa_default_settings = cwa_db.cwa_default_settings
     cwa_settings = cwa_db.cwa_settings
     previous_koreader_enabled = bool(cwa_settings.get('koreader_sync_enabled', 0))
+    previous_owner_isolation = bool(cwa_settings.get('owner_isolation', 0))
 
     ignorable_formats = ['acsm', 'azw', 'azw3', 'azw4', 'cbz',
                         'cbr', 'cb7', 'cbc', 'chm',
@@ -987,6 +988,23 @@ def set_cwa_settings():
 
             cwa_db.update_cwa_settings(result)
             cwa_settings = cwa_db.get_cwa_settings()
+
+            # Engage/release per-user owner isolation when the toggle flips. This
+            # sets config_restricted_column to the #owner column and backfills each
+            # user's allowed_column_value (see cps/owner_library.py).
+            now_owner_isolation = bool(cwa_settings.get('owner_isolation', 0))
+            if now_owner_isolation != previous_owner_isolation:
+                try:
+                    from . import owner_library
+                    ok, message = owner_library.apply_isolation(config, now_owner_isolation)
+                    flash(_(message), category="success" if ok else "error")
+                    if not ok:
+                        # Roll the stored toggle back so it matches the real state.
+                        cwa_db.update_cwa_settings({'owner_isolation': 1 if previous_owner_isolation else 0})
+                        cwa_settings = cwa_db.get_cwa_settings()
+                except Exception as e:
+                    log.error("Failed to apply owner isolation change: %s", str(e))
+                    flash(_("Could not apply the ownership isolation change; see logs."), category="error")
 
             if duplicate_criteria_changed:
                 try:

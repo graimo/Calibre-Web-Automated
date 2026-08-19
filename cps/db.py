@@ -1219,6 +1219,12 @@ class CalibreDB:
         for col in tmp_cc:
             if filter_config_custom_read and config.config_read_column and config.config_read_column == col.id:
                 continue
+            # The #owner column backs per-user ownership (approach B). It is a control
+            # column, not user-facing metadata: never show it in edit forms, detail
+            # views or search, and never let users edit raw owner ids by hand
+            # (sharing is managed via the dedicated Share dialog).
+            if col.label == 'owner':
+                continue
             if r and r.match(col.name):
                 continue
             cc.append(col)
