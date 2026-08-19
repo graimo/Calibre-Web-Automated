@@ -2919,6 +2919,21 @@ def read_book(book_id, book_format):
         return redirect(url_for("web.index"))
 
 
+@web.route("/owner/show-all/toggle")
+@user_login_required
+def toggle_owner_show_all():
+    """Admin-only session toggle to temporarily bypass per-user ownership isolation.
+
+    Admins are isolated by default (they see only the books they own); flipping this
+    reveals the whole library for the current session so they can browse/manage all
+    books, then flip it back for privacy."""
+    if current_user.is_anonymous or not current_user.role_admin():
+        abort(403)
+    flask_session['owner_show_all'] = not flask_session.get('owner_show_all', False)
+    flask_session.modified = True
+    return redirect(request.referrer or url_for('web.index'))
+
+
 @web.route("/book/<int:book_id>")
 @login_required_if_no_ano
 def show_book(book_id):

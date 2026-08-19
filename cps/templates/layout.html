@@ -164,6 +164,12 @@
               {% endif %}
               {% if current_user.role_admin() %}
                 <li><a id="top_admin" data-text="{{_('Settings')}}" href="{{url_for('admin.admin')}}"><span class="glyphicon glyphicon-dashboard"></span> <span class="hidden-sm">{{_('Admin')}}</span></a></li>
+                {% if cwa_settings and cwa_settings.get('owner_isolation') %}
+                <li><a id="top_owner_showall" data-text="{{_('Books view')}}" href="{{url_for('web.toggle_owner_show_all')}}" title="{{_('Toggle between seeing all books and only your own')}}">
+                  <span class="glyphicon {% if session.get('owner_show_all') %}glyphicon-eye-open{% else %}glyphicon-eye-close{% endif %}"></span>
+                  <span class="hidden-sm">{% if session.get('owner_show_all') %}{{_('Showing all')}}{% else %}{{_('My books only')}}{% endif %}</span>
+                </a></li>
+                {% endif %}
               {% endif %}
               <li><a id="refresh-library" style="cursor: pointer;" data-text="{{_('Refresh Library')}}" onclick="refreshLibrary()"><span class="glyphicon glyphicon-refresh"></span> <span class="hidden-sm">{{_('Refresh Library')}}</span></a></li>
               {% if g.current_theme == 0 %}

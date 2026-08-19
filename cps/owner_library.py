@@ -92,10 +92,13 @@ def is_admin(user):
 def allowed_value_for_user(user, isolation_active=True):
     """The ``allowed_column_value`` a user should carry.
 
-    Admins (and anyone, when isolation is off) get an empty value → they see every
-    book. A normal user is restricted to books they own (their own id).
+    When isolation is off, everyone gets an empty value (sees every book). When it
+    is on, EVERY user — admins included — is restricted to the books they own (their
+    own id). Admins reveal the whole library on demand via the "show all" session
+    toggle (see ``common_filters`` / the admin control), so they are isolated by
+    default but never lose the ability to manage everything.
     """
-    if not isolation_active or is_admin(user):
+    if not isolation_active:
         return ""
     return str(user.id)
 

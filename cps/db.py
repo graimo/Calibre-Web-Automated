@@ -36,7 +36,7 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from .cw_login import current_user
 from flask_babel import gettext as _
 from flask_babel import get_locale
-from flask import flash
+from flask import flash, session
 
 from . import logger, ub, isoLanguages
 from .pagination import Pagination
@@ -967,7 +967,18 @@ class CalibreDB:
                 postags_list = postags_list + [viewing_tag.name]
         
         pos_content_tags_filter = true() if postags_list == [''] else Books.tags.any(Tags.name.in_(postags_list))
-        if self.config.config_restricted_column:
+        # Admins are isolated by default (their allowed_column_value is their own id),
+        # but can temporarily reveal the whole library with the "show all" session
+        # toggle (owner_library / the admin control in the layout). Guarded so it is
+        # safe outside a request context.
+        admin_show_all = False
+        try:
+            if self.config.config_restricted_column and current_user.role_admin() \
+                    and session.get('owner_show_all'):
+                admin_show_all = True
+        except Exception:
+            admin_show_all = False
+        if self.config.config_restricted_column and not admin_show_all:
             try:
                 pos_cc_list = current_user.allowed_column_value.split(',')
                 pos_content_cc_filter = true() if pos_cc_list == [''] else \
