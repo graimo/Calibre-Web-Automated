@@ -121,15 +121,16 @@ def _metadata_path(root_path):
     return metadata_path
 
 
-def create_empty_calibre_library(root_path):
-    """Initialize or validate metadata.db using Calibre's own Python runtime."""
-    metadata_path = _metadata_path(root_path)
+def _empty_library_template():
+    """Path to the bundled empty Calibre metadata.db template."""
+    app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(app_root, "empty_library", "metadata.db")
 
+
+def _init_library_via_calibre_debug(root_path):
     binary = _calibre_debug_binary()
     if not binary:
         raise RuntimeError("calibre-debug is required to provision a physical Calibre library")
-
-    os.makedirs(root_path, mode=0o750, exist_ok=True)
     environment = os.environ.copy()
     environment["CWA_PROVISION_LIBRARY_PATH"] = root_path
     command = [
@@ -150,9 +151,37 @@ def create_empty_calibre_library(root_path):
     if result.returncode:
         detail = (result.stderr or "Calibre initialization failed").strip()[-500:]
         raise RuntimeError(detail)
+
+
+def create_empty_calibre_library(root_path):
+    """Initialize metadata.db for a new personal library.
+
+    Copies the bundled empty-library template (same approach used for the main
+    library in scripts/auto_library.py). This works WITHOUT Calibre's frozen
+    runtime, which crashes on some hosts (e.g. older kernels: 'bad marshal
+    data'). Falls back to calibre-debug only when the template is unavailable.
+    """
     metadata_path = _metadata_path(root_path)
-    if not os.path.isfile(metadata_path):
-        raise RuntimeError("Calibre did not create metadata.db")
+    os.makedirs(root_path, mode=0o750, exist_ok=True)
+    if os.path.isfile(metadata_path):
+        return
+
+    template = _empty_library_template()
+    if os.path.isfile(template):
+        shutil.copyfile(template, metadata_path)
+        # Give this library its own Calibre UUID (the template shares one).
+        try:
+            import sqlite3
+            with sqlite3.connect(metadata_path, timeout=30) as con:
+                con.execute("UPDATE library_id SET uuid = ?", (str(uuid.uuid4()),))
+                con.commit()
+        except sqlite3.Error as error:
+            log.warning("Could not reset library uuid for %s: %s", root_path, error)
+    else:
+        _init_library_via_calibre_debug(root_path)
+
+    if not os.path.isfile(_metadata_path(root_path)):
+        raise RuntimeError("Failed to create metadata.db for personal library")
 
 
 def _is_anonymous(user):
