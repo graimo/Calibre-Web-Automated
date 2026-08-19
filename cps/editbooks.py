@@ -121,12 +121,18 @@ def share_book_owners(book_id):
     if request.method == 'POST':
         selected = request.form.getlist("owner_ids")
         selected_ids = [int(x) for x in selected if str(x).strip().isdigit()]
-        # A non-admin owner always remains an owner of their own book.
-        if not is_owner_admin and int(current_user.id) not in selected_ids:
-            selected_ids.append(int(current_user.id))
+        if is_owner_admin:
+            # Admins have full control: the submitted set is applied as-is
+            # (they can both add and remove owners).
+            final_ids = selected_ids
+        else:
+            # Owners can only ADD co-owners — never remove an existing owner
+            # (including themselves). Existing owners are always preserved,
+            # regardless of what the form submits (their checkboxes are disabled).
+            final_ids = current_owner_ids + selected_ids
         # De-duplicate and keep only real, non-anonymous users.
-        selected_ids = [uid for uid in dict.fromkeys(selected_ids) if uid in valid_ids]
-        owner_library.set_book_owners(book, selected_ids, col)
+        final_ids = [uid for uid in dict.fromkeys(final_ids) if uid in valid_ids]
+        owner_library.set_book_owners(book, final_ids, col)
         flash(_("Sharing updated for '%(title)s'", title=book.title), category="success")
         return redirect(url_for("web.show_book", book_id=book_id))
 
@@ -1518,11 +1524,25 @@ def delete_book_from_table(book_id, book_format, json_response, location=""):
 
 def render_edit_book(book_id):
     cc = calibre_db.session.query(db.CustomColumns).filter(db.CustomColumns.datatype.notin_(db.cc_exceptions)).all()
+    # The #owner column (approach B) is a control column, not free-text metadata:
+    # keep it out of the edit form and manage it through the checkbox Share dialog.
+    cc = [c for c in cc if c.label != 'owner']
     book = calibre_db.get_filtered_book(book_id, allow_show_archived=True)
     if not book:
         flash(_("Oops! Selected book is unavailable. File does not exist or is not accessible"),
               category="error")
         return redirect(url_for("web.index"))
+
+    # Whether to show a "Manage owners" entry point (admins always, once the #owner
+    # column exists; a normal user only for a book they own).
+    can_manage_owners = False
+    try:
+        from . import owner_library
+        if owner_library.get_owner_column() is not None:
+            can_manage_owners = current_user.role_admin() \
+                or int(current_user.id) in owner_library.get_book_owner_ids(book)
+    except Exception as error:
+        log.debug("owner manage-eligibility check failed for book %s: %s", book_id, error)
 
     for lang in book.languages:
         lang.language_name = isoLanguages.get_language_name(get_locale(), lang.lang_code)
@@ -1563,6 +1583,7 @@ def render_edit_book(book_id):
                                  conversion_formats=allowed_conversion_formats,
                                  config=config,
                                  hardcover_blacklist=hardcover_blacklist,
+                                 can_manage_owners=can_manage_owners,
                                  source_formats=valid_source_formats)
 
 

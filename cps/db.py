@@ -1128,11 +1128,14 @@ class CalibreDB:
                 if not auth:
                     continue
                 results = self.session.query(Authors).filter(Authors.sort == auth).all()
-                # ToDo: How to handle not found author name
+                # If a book's author_sort fragment has no exactly-matching author
+                # (common with multi-author strings or special characters), skip just
+                # that fragment and keep ordering the rest — so the first/primary
+                # author still comes out right — instead of abandoning the whole
+                # ordering. Any unmatched authors are appended below in default order.
                 if not len(results):
-                    log.error("Author '{}' not found to display name in right order".format(auth))
-                    # error = True
-                    break
+                    log.debug("Author sort '%s' has no exact match; leaving it in default order", auth)
+                    continue
                 for r in results:
                     if r.id in ids:
                         authors_ordered.append(r)

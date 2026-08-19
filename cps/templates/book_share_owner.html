@@ -18,7 +18,7 @@
           <input type="checkbox" name="owner_ids" value="{{ user.id }}"
                  style="accent-color: var(--color-secondary);"
                  {% if is_owner %}checked{% endif %}
-                 {% if is_self and not is_owner_admin %}checked disabled{% endif %}>
+                 {% if is_owner and not is_owner_admin %}disabled{% endif %}>
           <span>{{ user.name }}</span>
           {% if is_self %}<em style="opacity:.6;">({{ _('you') }})</em>{% endif %}
           {% if user.role_admin() %}<em style="opacity:.6;">({{ _('admin') }})</em>{% endif %}
@@ -29,7 +29,7 @@
 
     {% if not is_owner_admin %}
     <p style="opacity:.7; font-size:.9em;">
-      {{ _('You cannot remove yourself here. To give up a shared book, delete it — the book stays for the remaining owners.') }}
+      {{ _('You can add owners but cannot remove existing ones (they are greyed out). To give up a book you share, delete it — it stays for the other owners.') }}
     </p>
     {% endif %}
 

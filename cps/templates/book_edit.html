@@ -152,6 +152,17 @@
         <input id="btn-upload-cover" name="btn-upload-cover" type="file" accept=".jpg, .jpeg, .png, .webp">
       </div>
     {% endif %}
+      {% if can_manage_owners %}
+      <div class="form-group" aria-label="Manage book owners">
+        <label>{{ _('Owners') }}</label>
+        <div>
+          <a href="{{ url_for('edit-book.share_book_owners', book_id=book.id) }}" class="btn btn-default">
+            <span class="glyphicon glyphicon-share"></span> {{ _('Manage owners') }}
+          </a>
+          <p class="text-muted" style="margin-top:6px;">{{ _('Who can see and read this book. Managed as a checklist of users, not free text.') }}</p>
+        </div>
+      </div>
+      {% endif %}
       {% if cc|length > 0 %}
         {% for c in cc %}
           <div class="form-group">
