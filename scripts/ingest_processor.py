@@ -644,21 +644,22 @@ class NewBookProcessor:
         """Resolve the owning user id from the per-user ingest subfolder.
 
         A book dropped in <ingest_folder>/<username>/... is owned by <username>.
-        Returns the ub.User.id (int) or None when there is no user subfolder or the
-        name doesn't match a user (the book is then left un-owned)."""
+        Returns the ub.User.id (int) or None when there is no user subfolder, the
+        name doesn't match a user, or anything goes wrong. Fully best-effort: it must
+        never raise, so it can never interrupt the ingest flow."""
         try:
-            rel = os.path.relpath(os.path.normpath(self.filepath), self.ingest_folder)
-        except ValueError:
-            return None
-        if rel.startswith(".."):
-            return None
-        parts = rel.split(os.sep)
-        if len(parts) < 2:
-            return None  # file was directly in the ingest root, no owner subfolder
-        username = parts[0].strip()
-        if not username or username in (".", ".."):
-            return None
-        try:
+            ingest_folder = getattr(self, "ingest_folder", None)
+            if not self.filepath or not ingest_folder:
+                return None
+            rel = os.path.relpath(os.path.normpath(self.filepath), ingest_folder)
+            if rel.startswith(".."):
+                return None
+            parts = rel.split(os.sep)
+            if len(parts) < 2:
+                return None  # file was directly in the ingest root, no owner subfolder
+            username = parts[0].strip()
+            if not username or username in (".", ".."):
+                return None
             with sqlite3.connect(get_app_db_path(), timeout=30) as con:
                 row = con.execute("SELECT id FROM user WHERE name = ?", (username,)).fetchone()
                 if row:
@@ -666,7 +667,7 @@ class NewBookProcessor:
                 print(f"[ingest-processor] INFO: ingest subfolder '{username}' matches no user; leaving book un-owned.", flush=True)
                 return None
         except Exception as e:
-            print(f"[ingest-processor] WARN: Could not resolve owner for subfolder '{username}': {e}", flush=True)
+            print(f"[ingest-processor] WARN: could not resolve ingest owner: {e}", flush=True)
             return None
 
     def _set_book_owner(self, book_id: int, owner_user_id: int) -> None:
@@ -1030,11 +1031,15 @@ class NewBookProcessor:
             # Tag the book with its owner (from the per-user ingest subfolder) so
             # per-user ownership isolation (approach B) can route visibility. Runs
             # regardless of whether isolation is currently enabled, so ownership data
-            # accumulates and the admin can turn isolation on later.
+            # accumulates and the admin can turn isolation on later. Best-effort: it
+            # must never interrupt the import (which still needs to mark the batch).
             if self.last_added_book_id is not None:
-                owner_user_id = self._resolve_ingest_owner_id()
-                if owner_user_id is not None:
-                    self._set_book_owner(self.last_added_book_id, owner_user_id)
+                try:
+                    owner_user_id = self._resolve_ingest_owner_id()
+                    if owner_user_id is not None:
+                        self._set_book_owner(self.last_added_book_id, owner_user_id)
+                except Exception as owner_error:
+                    print(f"[ingest-processor] WARN: owner tagging failed: {owner_error}", flush=True)
 
             if self.cwa_settings['auto_backup_imports']:
                 self.backup(str(staged_path), backup_type="imported")
