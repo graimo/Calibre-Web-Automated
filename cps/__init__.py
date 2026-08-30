@@ -184,6 +184,26 @@ def create_app():
     except Exception as error:
         log.debug("owner_library reconcile failed at startup: %s", error)
 
+    @app.before_request
+    def _ensure_current_user_ingest_dropzone():
+        # Guarantee every logged-in user has their per-user ingest dropzone,
+        # regardless of how the account was created (admin panel, self-registration,
+        # OAuth, LDAP) — the admin-only creation hook and the boot-time reconcile do
+        # not cover accounts made via other paths without a restart. Runs once per
+        # session; best-effort, never blocks the request.
+        try:
+            from flask import session as _flask_session
+            from .cw_login import current_user as _current_user
+            if not _current_user.is_authenticated or _current_user.is_anonymous:
+                return
+            if _flask_session.get('_ingest_dropzone_ok'):
+                return
+            from . import library_control
+            library_control.ensure_user_ingest_dir(_current_user)
+            _flask_session['_ingest_dropzone_ok'] = True
+        except Exception:
+            pass
+
     updater_thread.init_updater(config, web_server)
     # Perform dry run of updater and exit afterward
     if cli_param.dry_run:

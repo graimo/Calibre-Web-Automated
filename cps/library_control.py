@@ -338,16 +338,23 @@ def ensure_user_ingest_dir(user):
         return None
     ingest_root = _ingest_root()
     username = _safe_username_dir(getattr(user, "name", ""))
-    if not ingest_root or not username:
-        if username is None:
-            log.warning("Skipping ingest dir for unsafe username: %r", getattr(user, "name", ""))
+    if not ingest_root:
+        log.warning("Cannot create per-user ingest dir for %r: ingest_folder missing from dirs.json",
+                    getattr(user, "name", ""))
+        return None
+    if not username:
+        log.warning("Skipping ingest dir for unsafe username: %r", getattr(user, "name", ""))
         return None
     path = os.path.join(ingest_root, username)
     try:
+        existed = os.path.isdir(path)
         os.makedirs(path, exist_ok=True)
+        if not existed:
+            log.info("Created per-user ingest dir: %s", path)
         return path
     except OSError as error:
-        log.warning("Could not create per-user ingest dir %s: %s", path, error)
+        log.error("Could not create per-user ingest dir %s: %s "
+                  "(check that the ingest volume is writable by PUID/PGID)", path, error)
         return None
 
 

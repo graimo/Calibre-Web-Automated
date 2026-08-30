@@ -2661,19 +2661,24 @@ def _handle_new_user(to_save, content, languages, translations, kobo_support):
         ub.session.add(content)
         ub.session.commit()
         # Approach B (per-user ownership): give the new user the correct visibility
-        # restriction (their own id when isolation is on; empty for admins so they
-        # see everything) and create their dedicated ingest dropzone. This is
-        # decoupled from physical multi-library provisioning.
+        # restriction (their own id when isolation is on). Decoupled from physical
+        # multi-library provisioning.
         try:
-            from . import owner_library, library_control
+            from . import owner_library
             isolation_active = owner_library.is_isolation_active(config)
             desired = owner_library.allowed_value_for_user(content, isolation_active)
             if (content.allowed_column_value or "") != desired:
                 content.allowed_column_value = desired
                 ub.session.commit()
+        except Exception as error:
+            log.error("Post-create owner restriction setup failed for user %s: %s", content.name, error)
+        # Create the dedicated ingest dropzone in its OWN try, so a failure above can
+        # never prevent it (and vice versa).
+        try:
+            from . import library_control
             library_control.ensure_user_ingest_dir(content)
         except Exception as error:
-            log.error("Post-create owner/ingest setup failed for user %s: %s", content.name, error)
+            log.error("Could not create ingest dropzone for user %s: %s", content.name, error)
         if constants.MULTI_LIBRARY_ENABLED:
             try:
                 from . import library_control
