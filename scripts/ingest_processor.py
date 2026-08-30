@@ -867,13 +867,23 @@ class NewBookProcessor:
                 return
 
             parent_dir = os.path.dirname(self.filepath)
-            # Only attempt folder cleanup if parent still exists and isn't the ingest root
-            if os.path.isdir(parent_dir) and os.path.exists(parent_dir):
-                try:
-                    if os.path.exists(self.ingest_folder) and os.path.normpath(parent_dir) != self.ingest_folder:
-                        subprocess.run(["find", parent_dir, "-type", "d", "-empty", "-delete"], check=False)
-                except Exception as e:
-                    print(f"[ingest-processor] WARN: Failed pruning empty folders for {parent_dir}: {e}", flush=True)
+            # Prune empty leftover directories, but PRESERVE the per-user dropzones:
+            # the first-level subfolders directly under the ingest root (e.g.
+            # /cwa-book-ingest/<username>) are permanent drop targets and must never be
+            # removed, even when empty — otherwise a user's folder disappears after the
+            # first ingest. Only transient deeper subfolders are pruned, walking up and
+            # stopping before the dropzone level.
+            try:
+                ingest_root = os.path.normpath(self.ingest_folder)
+                current = os.path.normpath(parent_dir)
+                while (os.path.isdir(current)
+                        and current != ingest_root
+                        and os.path.dirname(current) != ingest_root
+                        and not os.listdir(current)):
+                    os.rmdir(current)
+                    current = os.path.dirname(current)
+            except OSError as e:
+                print(f"[ingest-processor] WARN: Failed pruning empty folders for {parent_dir}: {e}", flush=True)
         except Exception as e:
             print(f"[ingest-processor] WARN: Failed to delete processed file {self.filepath}: {e}", flush=True)
 
